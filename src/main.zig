@@ -9,6 +9,8 @@ const c = @cImport({
 const assert = std.debug.assert;
 const eprint = std.debug.print;
 const eql = std.mem.eql;
+const mem = std.mem;
+const log = std.log;
 
 fn eprintln(comptime str: []const u8, args: anytype) void {
     return std.debug.print(str ++ "\n", args);
@@ -32,13 +34,13 @@ pub fn convert_file(filepath: []const u8) void {
     const buffer = gpa.alloc(u8, as_kb * 64) catch unreachable;
     const read: []const u8 = std.fs.cwd().readFile(filepath, buffer) catch unreachable;
 
-    assert(read.len < buffer.len);
+    const lines = mem.splitScalar(u8, read, '\n');
 
-    eprintln("", .{});
+    assert(read.len < buffer.len);
 
     var wrapper = tree_sitter_parser(read);
 
-    loop_tree(&wrapper);
+    loop_tree(&wrapper, lines);
 
     // const fn_node = c.ts_node_named_child(root_node, 0);
     // const root_node_name = c.ts_node_type(root_node);
@@ -76,8 +78,58 @@ const TSTreeWrapper = struct {
     }
 };
 
-fn loop_tree(wrapper: *const TSTreeWrapper) void {
+fn get_node_name(node: c.TSNode) []const u8 {
+    const node_name = c.ts_node_type(node);
+    return node_name[0..mem.len(node_name)];
+}
+
+fn is_of_type(node: c.TSNode, name: []const u8) bool {
+    const c_node_name = c.ts_node_type(node);
+    const node_name = c_node_name[0..mem.len(c_node_name)];
+    return eql(u8, node_name, name);
+}
+
+const Lines = mem.SplitIterator(u8, .scalar);
+
+fn get_text_at(start_pt: c.TSPoint, end_pt: c.TSPoint, lines_iter: Lines) []const []const u8 {
+    var lines = lines_iter;
+
+    var skip_num_rows = start_pt.row;
+
+    while (skip_num_rows > 0) : (skip_num_rows -= 1) {
+        _ = lines.next() orelse unreachable;
+    }
+    var selected_rows = std.ArrayList([]const u8).init(gpa);
+
+    assert(start_pt.row <= end_pt.row);
+    var num_rows = (end_pt.row - start_pt.row) + 1;
+
+    eprintln(
+        "NumRows: {}",
+        .{num_rows},
+    );
+    while (num_rows > 0) : (num_rows -= 1) {
+        selected_rows.append(lines.next() orelse unreachable) catch unreachable;
+    }
+
+    const items = selected_rows.items;
+
+    if (start_pt.row == end_pt.row) {
+        assert(start_pt.column < end_pt.column);
+        items[0] = items[0][start_pt.column..end_pt.column];
+    } else {
+        const len = items.len;
+        items[0] = items[0][start_pt.column..];
+        items[len - 1] = items[len - 1][0..end_pt.column];
+    }
+
+    return items;
+}
+
+fn loop_tree(wrapper: *const TSTreeWrapper, buffer: Lines) void {
     var i: usize = 0;
+    var lines = buffer;
+    lines.reset();
 
     const root_node = c.ts_tree_root_node(wrapper.tree);
 
@@ -106,11 +158,23 @@ fn loop_tree(wrapper: *const TSTreeWrapper) void {
             if (eql(u8, "function_item", name)) {
                 const field_name = "name";
                 const name_field = c.ts_node_child_by_field_name(child, field_name, field_name.len);
-                _ = name_field; // autofix
 
-                // TODO: if (is_of_type(name_field, "identifier")) {}
+                const point = c.ts_node_start_point(name_field);
+                const end_point = c.ts_node_end_point(name_field);
 
-                std.log.debug("Function Item: {:>2} {s}", .{ idx, child_name });
+                const text = get_text_at(point, end_point, lines);
+
+                log.debug("loc {}:{} - {}:{} ==> ", .{
+                    point.row + 1,
+                    point.column + 1,
+                    end_point.row + 1,
+                    end_point.column + 1,
+                });
+
+                std.log.debug("[function_item]:", .{});
+                for (text) |line| {
+                    eprintln("\t\"{s}\"", .{line});
+                }
             } else {
                 eprintln("Appending Child: {:>2} {s}", .{ idx, child_name });
             }
@@ -124,8 +188,6 @@ fn tree_sitter_parser(source_code: []const u8) TSTreeWrapper {
     const parser = c.ts_parser_new();
 
     assert(c.ts_parser_set_language(parser, c.tree_sitter_rust()));
-
-    // const source_code = "pub fn main() {}";
 
     const tree = c.ts_parser_parse_string(
         parser,
