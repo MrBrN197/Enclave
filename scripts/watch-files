@@ -23,7 +23,7 @@ function clear
     printf "\e[1;1H\e[J"
 end
 
-# command $run_cmd
+command $run_cmd
 
 while true
 

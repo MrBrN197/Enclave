@@ -4,4 +4,4 @@ examples/
 zig-cache/
 zig-out/
 
-./log.txt
+/log.txt
