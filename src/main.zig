@@ -25,8 +25,18 @@ pub fn out(comptime str: []const u8) void {
 
 pub const std_options = std.Options{ .log_level = .info };
 
-pub fn main() !void {
-    _ = try convert_file("./example.rs");
+pub fn main() void {
+    const filepath = "./examples/examples.rs";
+    _ = convert_file(filepath) catch |e| {
+        switch (e) {
+            error.FileNotFound => eprintln("File Path Not Found: {s}", .{filepath}),
+
+            else => {
+                eprintln("Failed to Read File {s}", .{filepath});
+                eprintln("{s}", .{@errorName(e)});
+            },
+        }
+    };
 }
 
 var gpa_allocator = std.heap.GeneralPurposeAllocator(.{
