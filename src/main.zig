@@ -64,7 +64,6 @@ pub const Parser = struct {
     lines_iter: Lines,
 
     const Lines = mem.SplitIterator(u8, .scalar);
-    const TextSlice = []const []const u8;
 
     fn init(source_code: []const u8) @This() {
         const parser = c.ts_parser_new();
@@ -113,15 +112,26 @@ pub const Parser = struct {
         current_node.write_to(self, writer);
     }
 
-    pub fn node_to_string(self: *const Parser, node: c.TSNode) TextSlice {
-        // FIX:
+    pub fn node_to_string(self: *const Parser, node: c.TSNode, allocator: std.mem.Allocator) []const u8 {
         const start = c.ts_node_start_point(node);
         const end = c.ts_node_end_point(node);
-        const name = self.get_text_at(start, end);
-        return name;
+        const lines = self.get_text_at(start, end);
+        var size: usize = 0;
+        for (lines) |slice| {
+            size += slice.len;
+        }
+        const buffer = allocator.alloc(u8, size) catch unreachable;
+
+        var idx: usize = 0;
+        for (lines) |slice| {
+            std.mem.copyForwards(u8, buffer[idx..], slice);
+            idx += slice.len;
+        }
+
+        return buffer[0..idx];
     }
 
-    fn get_text_at(self: *const Parser, start_pt: c.TSPoint, end_pt: c.TSPoint) TextSlice {
+    fn get_text_at(self: *const Parser, start_pt: c.TSPoint, end_pt: c.TSPoint) []const []const u8 {
         var lines = self.lines_iter;
 
         var skip_num_rows = start_pt.row;
