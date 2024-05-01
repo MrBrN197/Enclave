@@ -62,6 +62,7 @@ pub const NodeType = enum {
     generic_type,
     generic_type_with_turbofish,
     higher_ranked_trait_bound,
+    identifier,
     if_expression,
     impl_item,
     index_expression,
@@ -129,11 +130,11 @@ pub const NodeType = enum {
     tuple_expression,
     tuple_pattern,
     tuple_struct_pattern,
-    type_identifier,
     tuple_type,
     type_arguments,
     type_binding,
     type_cast_expression,
+    type_identifier,
     type_item,
     type_parameters,
     unary_expression,
@@ -301,8 +302,9 @@ pub const NodeType = enum {
         if (eql(str, "where_predicate")) return .where_predicate;
         if (eql(str, "while_expression")) return .while_expression;
         if (eql(str, "yield_expression")) return .yield_expression;
+        if (eql(str, "identifier")) return .identifier;
 
-        eprintln("Invalid Type {s}", .{str});
+        eprintln("Invalid Type '{s}'", .{str});
         unreachable;
     }
 };
