@@ -1,15 +1,17 @@
 #! /usr/bin/fish
 
-set -l watch_path ( echo  $argv[1] | string split ' ' | string split " " )
+set -l watch_path ( echo  $argv[1] | string split ' ' )
 set -l run_cmd $argv[2..]
 
 
-if test -z "$watch_path"
-    printf "\e[38;5;1mUsage: ./watch-files '<file...>' \n\e[m"
-    exit 1
-end
+# if test -z "$watch_path"
+#     printf "\e[38;5;1mUsage: ./watch-files '<file...>' \n\e[m"
+#     exit 1
+# end
 
 for file in $watch_path
+    test -z $file; and continue
+
     if ! test -d $file; and ! test -f $file
         printf "\e[38;5;1mfile '%s' does not exist\n\e[m" $file
         exit 1
@@ -17,11 +19,9 @@ for file in $watch_path
     printf "Watching %s\n" $file
 end
 
-
 function clear
     printf "\e[1;1H\e[J"
 end
-
 
 # command $run_cmd
 
