@@ -6,9 +6,11 @@ const c = @import("./c.zig");
 
 const eprintln = @import("./root.zig").eprintln;
 const eprint = @import("./root.zig").eprint;
+const eql = @import("./root.zig").eql;
 
 const main = @import("./main.zig"); // TODO:
-const eql = main.eql;
+
+const NodeType = @import("./node/types.zig").NodeType;
 
 const Writer = @TypeOf(std.io.getStdOut().writer());
 const Allocator = std.mem.Allocator;
@@ -28,18 +30,6 @@ pub fn is_of_type(node: c.TSNode, name: []const u8) bool {
     return eql(node_name, name);
 }
 
-pub fn get_children_named(node: c.TSNode, allocator: std.mem.Allocator) std.ArrayList(c.TSNode) {
-    var array_list = std.ArrayList(c.TSNode).init(allocator);
-    const child_count = c.ts_node_named_child_count(node);
-
-    for (0..child_count) |idx| {
-        const child = get_child_named(node, @truncate(idx)) orelse unreachable;
-        array_list.append(child) catch unreachable;
-    }
-
-    return array_list;
-}
-
 pub fn get_type(node: c.TSNode, allocator: std.mem.Allocator) []const u8 {
     const node_name = c.ts_node_type(node);
     assert(mem.len(node_name) < 1024);
@@ -49,438 +39,6 @@ pub fn get_type(node: c.TSNode, allocator: std.mem.Allocator) []const u8 {
 }
 
 pub const Node = struct {
-    const NodeType = enum {
-        abstract_type,
-        arguments,
-        array_expression,
-        array_type,
-        assignment_expression,
-        associated_type,
-        async_block,
-        attribute,
-        attribute_item,
-        await_expression,
-        base_field_initializer,
-        binary_expression,
-        block,
-        block_comment,
-        bounded_type,
-        bracketed_type,
-        break_expression,
-        call_expression,
-        closure_expression,
-        compound_assignment_expr,
-        const_block,
-        const_item,
-        const_parameter,
-        constrained_type_parameter,
-        continue_expression,
-        crate,
-        declaration_list,
-        delim_token_tree,
-        dynamic_type,
-        else_clause,
-        empty_statement,
-        enum_item,
-        enum_variant,
-        enum_variant_list,
-        expression_statement,
-        extern_crate_declaration,
-        extern_modifier,
-        field_declaration,
-        field_declaration_list,
-        field_expression,
-        field_initializer,
-        field_initializer_list,
-        float_literal,
-        foreign_mod_item,
-        for_expression,
-        for_lifetimes,
-        fragment_specifier,
-        function_item,
-        function_modifiers,
-        function_signature_item,
-        function_type,
-        generic_function,
-        generic_type,
-        generic_type_with_turbofish,
-        higher_ranked_trait_bound,
-        identifier,
-        if_expression,
-        impl_item,
-        index_expression,
-        inner_attribute_item,
-        integer_literal,
-        label,
-        last_match_arm,
-        let_chain,
-        let_condition,
-        let_declaration,
-        lifetime,
-        line_comment,
-        loop_expression,
-        macro_definition,
-        macro_invocation,
-        macro_rule,
-        match_arm,
-        match_block,
-        match_expression,
-        match_pattern,
-        metavariable,
-        mod_item,
-        mutable_specifier,
-        never_type,
-        optional_type_parameter,
-        ordered_field_declaration_list,
-        parameter,
-        parameters,
-        parenthesized_expression,
-        pointer_type,
-        primitive_type,
-        qualified_type,
-        range_expression,
-        raw_string_literal_content,
-        reference_expression,
-        reference_type,
-        removed_trait_bound,
-        return_expression,
-        scoped_identifier,
-        scoped_type_identifier,
-        scoped_type_identifier_in_expression_position,
-        scoped_use_list,
-        self,
-        self_parameter,
-        shebang,
-        shorthand_field_initializer,
-        static_item,
-        string_content,
-        string_literal,
-        struct_expression,
-        struct_item,
-        super,
-        token_binding_pattern,
-        token_repetition,
-        token_repetition_pattern,
-        token_tree,
-        token_tree_pattern,
-        trait_bounds,
-        trait_item,
-        try_block,
-        try_expression,
-        tuple_expression,
-        tuple_pattern,
-        tuple_struct_pattern,
-        tuple_type,
-        type_arguments,
-        type_binding,
-        type_cast_expression,
-        type_item,
-        type_parameters,
-        unary_expression,
-        union_item,
-        unit_expression,
-        unit_type,
-        unsafe_block,
-        use_as_clause,
-        use_declaration,
-        use_list,
-        use_wildcard,
-        variadic_parameter,
-        visibility_modifier,
-        where_clause,
-        where_predicate,
-        while_expression,
-        yield_expression,
-
-        pub fn from_string(str: []const u8) NodeType {
-            if (eql(str, "abstract_type")) {
-                return .abstract_type;
-            } else if (eql(str, "arguments")) {
-                return .arguments;
-            } else if (eql(str, "array_expression")) {
-                return .array_expression;
-            } else if (eql(str, "array_type")) {
-                return .array_type;
-            } else if (eql(str, "assignment_expression")) {
-                return .assignment_expression;
-            } else if (eql(str, "associated_type")) {
-                return .associated_type;
-            } else if (eql(str, "async_block")) {
-                return .async_block;
-            } else if (eql(str, "attribute")) {
-                return .attribute;
-            } else if (eql(str, "attribute_item")) {
-                return .attribute_item;
-            } else if (eql(str, "await_expression")) {
-                return .await_expression;
-            } else if (eql(str, "base_field_initializer")) {
-                return .base_field_initializer;
-            } else if (eql(str, "binary_expression")) {
-                return .binary_expression;
-            } else if (eql(str, "block")) {
-                return .block;
-            } else if (eql(str, "block_comment")) {
-                return .block_comment;
-            } else if (eql(str, "bounded_type")) {
-                return .bounded_type;
-            } else if (eql(str, "bracketed_type")) {
-                return .bracketed_type;
-            } else if (eql(str, "break_expression")) {
-                return .break_expression;
-            } else if (eql(str, "call_expression")) {
-                return .call_expression;
-            } else if (eql(str, "closure_expression")) {
-                return .closure_expression;
-            } else if (eql(str, "compound_assignment_expr")) {
-                return .compound_assignment_expr;
-            } else if (eql(str, "const_block")) {
-                return .const_block;
-            } else if (eql(str, "const_item")) {
-                return .const_item;
-            } else if (eql(str, "const_parameter")) {
-                return .const_parameter;
-            } else if (eql(str, "constrained_type_parameter")) {
-                return .constrained_type_parameter;
-            } else if (eql(str, "continue_expression")) {
-                return .continue_expression;
-            } else if (eql(str, "crate")) {
-                return .crate;
-            } else if (eql(str, "declaration_list")) {
-                return .declaration_list;
-            } else if (eql(str, "delim_token_tree")) {
-                return .delim_token_tree;
-            } else if (eql(str, "dynamic_type")) {
-                return .dynamic_type;
-            } else if (eql(str, "else_clause")) {
-                return .else_clause;
-            } else if (eql(str, "empty_statement")) {
-                return .empty_statement;
-            } else if (eql(str, "enum_item")) {
-                return .enum_item;
-            } else if (eql(str, "enum_variant")) {
-                return .enum_variant;
-            } else if (eql(str, "enum_variant_list")) {
-                return .enum_variant_list;
-            } else if (eql(str, "expression_statement")) {
-                return .expression_statement;
-            } else if (eql(str, "extern_crate_declaration")) {
-                return .extern_crate_declaration;
-            } else if (eql(str, "extern_modifier")) {
-                return .extern_modifier;
-            } else if (eql(str, "field_declaration")) {
-                return .field_declaration;
-            } else if (eql(str, "field_declaration_list")) {
-                return .field_declaration_list;
-            } else if (eql(str, "field_expression")) {
-                return .field_expression;
-            } else if (eql(str, "field_initializer")) {
-                return .field_initializer;
-            } else if (eql(str, "field_initializer_list")) {
-                return .field_initializer_list;
-            } else if (eql(str, "float_literal")) {
-                return .float_literal;
-            } else if (eql(str, "foreign_mod_item")) {
-                return .foreign_mod_item;
-            } else if (eql(str, "for_expression")) {
-                return .for_expression;
-            } else if (eql(str, "for_lifetimes")) {
-                return .for_lifetimes;
-            } else if (eql(str, "fragment_specifier")) {
-                return .fragment_specifier;
-            } else if (eql(str, "function_item")) {
-                return .function_item;
-            } else if (eql(str, "function_modifiers")) {
-                return .function_modifiers;
-            } else if (eql(str, "function_signature_item")) {
-                return .function_signature_item;
-            } else if (eql(str, "function_type")) {
-                return .function_type;
-            } else if (eql(str, "generic_function")) {
-                return .generic_function;
-            } else if (eql(str, "generic_type")) {
-                return .generic_type;
-            } else if (eql(str, "generic_type_with_turbofish")) {
-                return .generic_type_with_turbofish;
-            } else if (eql(str, "higher_ranked_trait_bound")) {
-                return .higher_ranked_trait_bound;
-            } else if (eql(str, "identifier")) {
-                return .identifier;
-            } else if (eql(str, "if_expression")) {
-                return .if_expression;
-            } else if (eql(str, "impl_item")) {
-                return .impl_item;
-            } else if (eql(str, "index_expression")) {
-                return .index_expression;
-            } else if (eql(str, "inner_attribute_item")) {
-                return .inner_attribute_item;
-            } else if (eql(str, "integer_literal")) {
-                return .integer_literal;
-            } else if (eql(str, "label")) {
-                return .label;
-            } else if (eql(str, "last_match_arm")) {
-                return .last_match_arm;
-            } else if (eql(str, "let_chain")) {
-                return .let_chain;
-            } else if (eql(str, "let_condition")) {
-                return .let_condition;
-            } else if (eql(str, "let_declaration")) {
-                return .let_declaration;
-            } else if (eql(str, "lifetime")) {
-                return .lifetime;
-            } else if (eql(str, "line_comment")) {
-                return .line_comment;
-            } else if (eql(str, "loop_expression")) {
-                return .loop_expression;
-            } else if (eql(str, "macro_definition")) {
-                return .macro_definition;
-            } else if (eql(str, "macro_invocation")) {
-                return .macro_invocation;
-            } else if (eql(str, "macro_rule")) {
-                return .macro_rule;
-            } else if (eql(str, "match_arm")) {
-                return .match_arm;
-            } else if (eql(str, "match_block")) {
-                return .match_block;
-            } else if (eql(str, "match_expression")) {
-                return .match_expression;
-            } else if (eql(str, "match_pattern")) {
-                return .match_pattern;
-            } else if (eql(str, "metavariable")) {
-                return .metavariable;
-            } else if (eql(str, "mod_item")) {
-                return .mod_item;
-            } else if (eql(str, "mutable_specifier")) {
-                return .mutable_specifier;
-            } else if (eql(str, "never_type")) {
-                return .never_type;
-            } else if (eql(str, "optional_type_parameter")) {
-                return .optional_type_parameter;
-            } else if (eql(str, "ordered_field_declaration_list")) {
-                return .ordered_field_declaration_list;
-            } else if (eql(str, "parameter")) {
-                return .parameter;
-            } else if (eql(str, "parameters")) {
-                return .parameters;
-            } else if (eql(str, "parenthesized_expression")) {
-                return .parenthesized_expression;
-            } else if (eql(str, "pointer_type")) {
-                return .pointer_type;
-            } else if (eql(str, "primitive_type")) {
-                return .primitive_type;
-            } else if (eql(str, "qualified_type")) {
-                return .qualified_type;
-            } else if (eql(str, "range_expression")) {
-                return .range_expression;
-            } else if (eql(str, "raw_string_literal_content")) {
-                return .raw_string_literal_content;
-            } else if (eql(str, "reference_expression")) {
-                return .reference_expression;
-            } else if (eql(str, "reference_type")) {
-                return .reference_type;
-            } else if (eql(str, "removed_trait_bound")) {
-                return .removed_trait_bound;
-            } else if (eql(str, "return_expression")) {
-                return .return_expression;
-            } else if (eql(str, "scoped_identifier")) {
-                return .scoped_identifier;
-            } else if (eql(str, "scoped_type_identifier")) {
-                return .scoped_type_identifier;
-            } else if (eql(str, "scoped_type_identifier_in_expression_position")) {
-                return .scoped_type_identifier_in_expression_position;
-            } else if (eql(str, "scoped_use_list")) {
-                return .scoped_use_list;
-            } else if (eql(str, "self")) {
-                return .self;
-            } else if (eql(str, "self_parameter")) {
-                return .self_parameter;
-            } else if (eql(str, "shebang")) {
-                return .shebang;
-            } else if (eql(str, "shorthand_field_initializer")) {
-                return .shorthand_field_initializer;
-            } else if (eql(str, "static_item")) {
-                return .static_item;
-            } else if (eql(str, "string_content")) {
-                return .string_content;
-            } else if (eql(str, "string_literal")) {
-                return .string_literal;
-            } else if (eql(str, "struct_expression")) {
-                return .struct_expression;
-            } else if (eql(str, "struct_item")) {
-                return .struct_item;
-            } else if (eql(str, "super")) {
-                return .super;
-            } else if (eql(str, "token_binding_pattern")) {
-                return .token_binding_pattern;
-            } else if (eql(str, "token_repetition")) {
-                return .token_repetition;
-            } else if (eql(str, "token_repetition_pattern")) {
-                return .token_repetition_pattern;
-            } else if (eql(str, "token_tree")) {
-                return .token_tree;
-            } else if (eql(str, "token_tree_pattern")) {
-                return .token_tree_pattern;
-            } else if (eql(str, "trait_bounds")) {
-                return .trait_bounds;
-            } else if (eql(str, "trait_item")) {
-                return .trait_item;
-            } else if (eql(str, "try_block")) {
-                return .try_block;
-            } else if (eql(str, "try_expression")) {
-                return .try_expression;
-            } else if (eql(str, "tuple_expression")) {
-                return .tuple_expression;
-            } else if (eql(str, "tuple_pattern")) {
-                return .tuple_pattern;
-            } else if (eql(str, "tuple_struct_pattern")) {
-                return .tuple_struct_pattern;
-            } else if (eql(str, "tuple_type")) {
-                return .tuple_type;
-            } else if (eql(str, "type_arguments")) {
-                return .type_arguments;
-            } else if (eql(str, "type_binding")) {
-                return .type_binding;
-            } else if (eql(str, "type_cast_expression")) {
-                return .type_cast_expression;
-            } else if (eql(str, "type_item")) {
-                return .type_item;
-            } else if (eql(str, "type_parameters")) {
-                return .type_parameters;
-            } else if (eql(str, "unary_expression")) {
-                return .unary_expression;
-            } else if (eql(str, "union_item")) {
-                return .union_item;
-            } else if (eql(str, "unit_expression")) {
-                return .unit_expression;
-            } else if (eql(str, "unit_type")) {
-                return .unit_type;
-            } else if (eql(str, "unsafe_block")) {
-                return .unsafe_block;
-            } else if (eql(str, "use_as_clause")) {
-                return .use_as_clause;
-            } else if (eql(str, "use_declaration")) {
-                return .use_declaration;
-            } else if (eql(str, "use_list")) {
-                return .use_list;
-            } else if (eql(str, "use_wildcard")) {
-                return .use_wildcard;
-            } else if (eql(str, "variadic_parameter")) {
-                return .variadic_parameter;
-            } else if (eql(str, "visibility_modifier")) {
-                return .visibility_modifier;
-            } else if (eql(str, "where_clause")) {
-                return .where_clause;
-            } else if (eql(str, "where_predicate")) {
-                return .where_predicate;
-            } else if (eql(str, "while_expression")) {
-                return .while_expression;
-            } else if (eql(str, "yield_expression")) {
-                return .yield_expression;
-            }
-
-            return .type_item;
-        }
-    };
-
     node_type: NodeType,
     node: c.TSNode,
     sym: []const u8,
@@ -505,7 +63,9 @@ pub const Node = struct {
         };
     }
 
-    // TODO: pub fn deinit() void {}
+    pub fn deinit(_: *Node) void {
+        // FIX:
+    }
 
     pub fn get_source_text(self: *const Node) []const []const u8 {
         _ = self; // autofix
@@ -553,14 +113,41 @@ pub const Node = struct {
         return Node.init(result, self.allocator);
     }
 
+    pub fn get_children_named(self: *const Node) std.ArrayList(Node) {
+        const ts_node = self.node;
+
+        var children = std.ArrayList(Node).init(self.allocator);
+        const named_child_count = c.ts_node_named_child_count(ts_node);
+
+        for (0..named_child_count) |idx| {
+            children.append(
+                Node.init(
+                    get_child_named(ts_node, @truncate(idx)) orelse unreachable,
+                    self.allocator,
+                ),
+            ) catch unreachable;
+        }
+
+        return children;
+    }
+
     pub fn write_to(self: *const Node, parser: *const main.Parser, writer: Writer) void {
         switch (self.node_type) {
+            .source_file => {
+                var children = self.get_children_named();
+                defer children.clearAndFree();
+                defer for (children.items) |*child| child.deinit();
+
+                for (children.items) |child| {
+                    child.write_to(parser, writer);
+                }
+            },
             .type_item => {
                 self.type_item_str(parser, writer);
             },
             else => |tag| {
                 _ = tag; // autofix
-                out(writer, "// TODO: {s}", .{"@tagName"});
+                out(writer, "// TODO: {s}\n", .{@tagName(self.node_type)});
             },
         }
     }
