@@ -33,8 +33,8 @@ pub const NodeItem = struct {
         };
 
         pub const Object = struct {
-            const Field = struct { name: []const u8, type_ref: ?*const Type };
-            fields: ?[]Field,
+            pub const Field = struct { name: []const u8, type_ref: ?*const Type };
+            fields: []Field,
             procedures: ?[]const Procedure,
         };
 
@@ -104,6 +104,7 @@ pub const NodeType = enum {
     field_declaration,
     field_declaration_list,
     field_expression,
+    field_identifier,
     field_initializer,
     field_initializer_list,
     field_pattern,
@@ -255,6 +256,7 @@ pub const NodeType = enum {
         if (eql(str, "field_declaration_list")) return .field_declaration_list;
         if (eql(str, "field_declaration")) return .field_declaration;
         if (eql(str, "field_expression")) return .field_expression;
+        if (eql(str, "field_identifier")) return .field_identifier;
         if (eql(str, "field_initializer_list")) return .field_initializer_list;
         if (eql(str, "field_initializer")) return .field_initializer;
         if (eql(str, "field_pattern")) return .field_pattern;
@@ -270,6 +272,7 @@ pub const NodeType = enum {
         if (eql(str, "generic_type")) return .generic_type;
         if (eql(str, "generic_type_with_turbofish")) return .generic_type_with_turbofish;
         if (eql(str, "higher_ranked_trait_bound")) return .higher_ranked_trait_bound;
+        if (eql(str, "identifier")) return .identifier;
         if (eql(str, "if_expression")) return .if_expression;
         if (eql(str, "impl_item")) return .impl_item;
         if (eql(str, "index_expression")) return .index_expression;
@@ -359,7 +362,6 @@ pub const NodeType = enum {
         if (eql(str, "where_predicate")) return .where_predicate;
         if (eql(str, "while_expression")) return .while_expression;
         if (eql(str, "yield_expression")) return .yield_expression;
-        if (eql(str, "identifier")) return .identifier;
 
         eprintln("Invalid Type '{s}'", .{str});
         unreachable;

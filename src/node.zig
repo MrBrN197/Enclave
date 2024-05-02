@@ -97,7 +97,6 @@ pub const Node = struct {
             // .generic_type => self.generic_type_str(parser),
             // .parameters => self.parameters_str(parser),
             // .scoped_type_identifier => self.scoped_type_identifier_str(parser),
-            // .struct_item => self.struct_item_str(parser),
             // .type_identifier => self.type_identifier_str(parser),
             // .unit_type => self.unit_type_str(parser),
 
@@ -204,28 +203,48 @@ pub const Node = struct {
     fn extract_struct_item(self: *const @This(), parser: *const Parser) NodeItem {
         // TODO: if get_field(self,"visibility_modifier") ||
 
-        assert(eql(self.sym, "struct_item"));
+        assert(self.node_type == .struct_item);
 
         const id_field = self.get_field_unchecked("name"); // $.identifier,
+        const id = parser.node_to_string(id_field.node, self.allocator);
         // if (self.get_field(self, "type_parameters")) ||  // TODO:
 
-        const id = parser.node_to_string(id_field.node, self.allocator);
-
-        const data = NodeItem.ItemData{
-            .object_item = .{
-                .fields = null, // TODO:
-                .procedures = null, // TODO:
-            },
-        };
+        var fields = std.ArrayList(NodeItem.ItemData.Object.Field).init(self.allocator);
 
         if (self.get_field("body")) |body_field| {
             // TODO: if get_field(body_field, "where_clause") |where_clause field| {}
             if (eql(body_field.sym, "field_declaration_list")) {
-                // TODO:
+                const decls = body_field.get_children_named();
+                for (decls.items) |decl| {
+                    if (decl.node_type == .field_declaration) {
+                        // $visibility_modifier?,
+                        const name_field = decl.get_field_unchecked("name"); //  $_field_identifier
+                        const name = parser.node_to_string(name_field.node, self.allocator);
+                        const type_field = decl.get_field_unchecked("type"); //  $_type
+                        _ = type_field; // autofix
+                        // TODO: extract_type_ref(type_field);
+
+                        const field = NodeItem.ItemData.Object.Field{
+                            .name = name,
+                            .type_ref = null,
+                        };
+                        fields.append(field) catch unreachable;
+                    } else if (decl.node_type == .attribute_item) {
+                        unreachable;
+                    } else unreachable;
+                }
             } else if (eql(body_field.sym, "ordered_field_declaration_list")) {
-                // TODO:
-            }
+                unreachable; // TODO:
+            } else unreachable;
         }
+
+        const data = NodeItem.ItemData{
+            .object_item = .{
+                .fields = fields.items,
+                .procedures = null, // TODO:
+            },
+        };
+
         const result = NodeItem.init(data, id);
         return result;
     }
