@@ -13,14 +13,14 @@ pub const NodeItem = struct {
     path: ?[]const u8,
     data: ItemData,
 
-    pub const Item = enum {
+    pub const ItemType = enum {
         procedure_item,
         object_item,
         type_item,
         impl_item,
     };
 
-    pub const ItemData = union(Item) {
+    pub const ItemData = union(ItemType) {
         procedure_item: Procedure,
         object_item: Object,
         type_item: Type,
@@ -31,8 +31,22 @@ pub const NodeItem = struct {
         };
 
         pub const Procedure = struct {
-            params: []const @This().Args,
-            const Args = []const u8;
+            params: []const Param,
+
+            pub const Param = struct {
+                name: []const u8,
+                typename: ?Type,
+
+                const Self = @This();
+
+                pub fn format(self: Self, comptime _: []const u8, _: std.fmt.FormatOptions, writer: Writer) !void {
+                    if (self.typename) |ty| {
+                        return std.fmt.format(writer, "{s}: {}", .{ self.name, ty });
+                    } else {
+                        return std.fmt.format(writer, "{s}", .{self.name});
+                    }
+                }
+            };
         };
 
         pub const Object = struct {
@@ -42,7 +56,13 @@ pub const NodeItem = struct {
         };
 
         pub const Type = struct {
-            definition: ?*const Item,
+            name: []const u8,
+            definition: ?*const ItemType,
+
+            const Self = @This();
+            pub fn format(self: Self, comptime _: []const u8, _: std.fmt.FormatOptions, writer: Writer) !void {
+                return std.fmt.format(writer, "{s}", .{self.name});
+            }
         };
     };
 
@@ -69,7 +89,7 @@ pub const NodeItem = struct {
                 try std.fmt.format(writer, "(", .{});
                 const param_len = data.params.len;
                 for (data.params, 0..) |param, idx| {
-                    try std.fmt.format(writer, "{s}", .{param});
+                    try std.fmt.format(writer, "{}", .{param});
                     if (idx != (param_len - 1)) try std.fmt.format(writer, ",", .{});
                 }
 

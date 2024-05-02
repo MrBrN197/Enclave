@@ -82,6 +82,7 @@ pub const Node = struct {
 
         const item_data = NodeItem.ItemData{
             .type_item = .{
+                .name = typename,
                 .definition = null, // TODO:
             },
         };
@@ -549,9 +550,9 @@ pub const Node = struct {
         assert(eql(name_field.sym, "identifier")); // TODO: $metavariable
         const name = parser.node_to_string(name_field.node, self.allocator);
 
-        // TODO: self.get_field("type_parameters")
-        const parameters = std.ArrayList([]const u8).init(parser.allocator); // TODO:
-        // TODO: self.get_field("parameters")
+        // TODO: if (self.get_field("type_parameters"))
+        const parameters_field = self.get_field_unchecked("parameters");
+        const params = parameters_field.extract_parameters(parser);
 
         // TODO: self.get_field("return_type)
         // TODO: get_field("where_clause"),
@@ -564,7 +565,7 @@ pub const Node = struct {
 
         const item_data = NodeItem.ItemData{
             .procedure_item = .{
-                .params = parameters.items,
+                .params = params.items,
                 // TODO: .return_type_str = return_type,
             },
         };
@@ -573,28 +574,42 @@ pub const Node = struct {
         return result;
     }
 
-    fn extract_parameters(self: *const @This(), parser: *const Parser) void { //TODO: writer
+    fn extract_parameters(
+        self: *const @This(),
+        parser: *const Parser,
+    ) std.ArrayList(NodeItem.ItemData.Procedure.Param) {
+        var result = std.ArrayList(NodeItem.ItemData.Procedure.Param).init(self.allocator);
 
         const children = self.get_children_named();
         for (children.items) |child| {
-            if (eql(child.sym, "attribute_item")) {
-                child.write_to(parser);
+            if (child.node_type == .attribute_item) {
+                unreachable;
             }
 
-            if (eql(child.sym, "parameter")) {
-                child.write_to(parser);
-            } else if (eql(child.sym, "self_parameter")) {
-                child.write_to(parser);
-            } else if (eql(child.sym, "variadic_parameter")) {
-                child.write_to(parser);
-            } else if (eql(child.sym, "_type")) {
-                child.write_to(parser);
-            } else {
-                //         out(writer, " _ ", .{});
-            }
+            const name_type = blk: {
+                if (child.node_type == .parameter) {
+                    unreachable;
+                } else if (child.node_type == .self_parameter) {
+                    unreachable;
+                } else if (child.node_type == .variadic_parameter) {
+                    unreachable;
+                } else { // _type
+                    const text = parser.node_to_string(child.node, self.allocator);
+                    if (eql(text, "_")) break :blk .{ .name = text, .type = null };
+                    // TODO: return extract_type()
+                    unreachable;
+                }
+            };
 
-            //     out(writer, ",", .{});
+            const name = name_type.name;
+            const typename = name_type.type;
+
+            result.append(NodeItem.ItemData.Procedure.Param{
+                .name = name,
+                .typename = typename,
+            }) catch unreachable; // FIX:
         }
+        return result;
     }
     fn extract_call_expression(self: *const @This(), parser: *const Parser) void { //TODO: writer
 
