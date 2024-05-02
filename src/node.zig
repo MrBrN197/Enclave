@@ -77,7 +77,7 @@ pub const Node = struct {
         const typename = parser.node_to_string(name_field.node, self.allocator);
         // TODO: const type_parameters_field = if (self.get_field("type_parameters")) //  $type_parameters
 
-        // TODO: const type_field("type"); // $_type
+        // TODO: const type_field = self.get_field("type"); // $_type
         // TODO: $where_clause,
 
         const item_data = NodeItem.ItemData{
@@ -550,6 +550,7 @@ pub const Node = struct {
         const name = parser.node_to_string(name_field.node, self.allocator);
 
         // TODO: self.get_field("type_parameters")
+        const parameters = std.ArrayList([]const u8).init(parser.allocator); // TODO:
         // TODO: self.get_field("parameters")
 
         // TODO: self.get_field("return_type)
@@ -563,7 +564,7 @@ pub const Node = struct {
 
         const item_data = NodeItem.ItemData{
             .procedure_item = .{
-                .params = null,
+                .params = parameters.items,
                 // TODO: .return_type_str = return_type,
             },
         };

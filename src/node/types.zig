@@ -31,7 +31,7 @@ pub const NodeItem = struct {
         };
 
         pub const Procedure = struct {
-            params: ?[]const @This().Args,
+            params: []const @This().Args,
             const Args = []const u8;
         };
 
@@ -61,6 +61,20 @@ pub const NodeItem = struct {
         switch (self.data) {
             .impl_item => {
                 // TODO:
+            },
+            .procedure_item => |data| {
+                const name = self.name orelse unreachable;
+                // TODO: visibility
+                try std.fmt.format(writer, "fn {s}", .{name});
+                try std.fmt.format(writer, "(", .{});
+                const param_len = data.params.len;
+                for (data.params, 0..) |param, idx| {
+                    try std.fmt.format(writer, "{s}", .{param});
+                    if (idx != (param_len - 1)) try std.fmt.format(writer, ",", .{});
+                }
+
+                try std.fmt.format(writer, ")", .{});
+                // self.to_str(writer); // TODO:
             },
             else => {
                 const name = self.name orelse unreachable;
