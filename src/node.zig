@@ -101,12 +101,6 @@ pub const Node = struct {
                 }
             },
 
-            // .generic_type => self.generic_type_str(parser),
-            // .parameters => self.parameters_str(parser),
-            // .scoped_type_identifier => self.scoped_type_identifier_str(parser),
-            // .type_identifier => self.type_identifier_str(parser),
-            // .unit_type => self.unit_type_str(parser),
-
             .type_item => {
                 const item = self.extract_type_item(parser);
                 collect.append(item) catch unreachable;

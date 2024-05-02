@@ -22,22 +22,27 @@ pub fn main() void {
     var argv = std.process.args();
     assert(argv.skip());
 
-    const filepath = argv.next() orelse {
+    var count: usize = 0;
+    while (argv.next()) |filepath| {
+        count += 1;
+        eprintln("=" ** 20 ++ "'{s}'" ++ "=" ** 20, .{filepath});
+        convert_file(filepath) catch |e| {
+            switch (e) {
+                error.FileNotFound => eprintln("File Path Not Found: {s}", .{filepath}),
+
+                else => {
+                    eprintln("Failed to Read File {s}", .{filepath});
+                    eprintln("{s}", .{@errorName(e)});
+                    std.process.exit(@truncate(@intFromError(e))); // FIX:
+                },
+            }
+        };
+    }
+
+    if (count == 0) {
         eprintln("error: filepath required", .{});
         std.process.exit(1);
-    };
-
-    convert_file(filepath) catch |e| {
-        switch (e) {
-            error.FileNotFound => eprintln("File Path Not Found: {s}", .{filepath}),
-
-            else => {
-                eprintln("Failed to Read File {s}", .{filepath});
-                eprintln("{s}", .{@errorName(e)});
-                std.process.exit(@truncate(@intFromError(e))); // FIX:
-            },
-        }
-    };
+    }
 }
 
 pub fn convert_file(filepath: []const u8) !void {
@@ -49,19 +54,17 @@ pub fn convert_file(filepath: []const u8) !void {
     const buffer = try gpa.alloc(u8, as_kb * 64);
     const read: []const u8 = try std.fs.cwd().readFile(filepath, buffer);
 
-    assert(read.len < buffer.len);
+    assert(read.len < buffer.len); // FIX:
 
     var wrapper = Parser.init(read, gpa);
 
     const items = wrapper.parse();
-    eprintln("Items Len: {}", .{items.len});
     const stdout = std.io.getStdOut();
     const writer = stdout.writer();
 
-    for (items) |item| {
-        item.serialize(writer) catch unreachable;
-    }
-    // wrapper.print_syntax_tree();
+    for (items) |item| item.serialize(writer) catch unreachable;
+
+    eprintln("Items Len: {}", .{items.len});
 
     try wrapper.deinit();
 }
