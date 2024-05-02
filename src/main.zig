@@ -19,8 +19,6 @@ const gpa = gpa_allocator.allocator();
 pub const std_options = std.Options{ .log_level = .info };
 
 pub fn main() void {
-    // const filepath = "./examples/example.rs";
-
     var argv = std.process.args();
     assert(argv.skip());
 
@@ -36,6 +34,7 @@ pub fn main() void {
             else => {
                 eprintln("Failed to Read File {s}", .{filepath});
                 eprintln("{s}", .{@errorName(e)});
+                std.process.exit(@truncate(@intFromError(e))); // FIX:
             },
         }
     };
@@ -56,6 +55,12 @@ pub fn convert_file(filepath: []const u8) !void {
 
     const items = wrapper.parse();
     eprintln("Items Len: {}", .{items.len});
+    const stdout = std.io.getStdOut();
+    const writer = stdout.writer();
+
+    for (items) |item| {
+        item.serialize(writer) catch unreachable;
+    }
     // wrapper.print_syntax_tree();
 
     try wrapper.deinit();

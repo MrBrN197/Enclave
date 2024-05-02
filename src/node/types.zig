@@ -4,6 +4,9 @@ const eprint = @import("../root.zig").eprint;
 
 const std = @import("std");
 const Writer = @TypeOf(std.io.getStdOut().writer());
+const assert = std.debug.assert;
+
+const is_empty = @import("../root.zig").is_empty;
 
 pub const NodeItem = struct {
     name: ?[]const u8,
@@ -44,6 +47,8 @@ pub const NodeItem = struct {
     };
 
     pub fn init(data: ItemData, name: ?[]const u8) NodeItem {
+        if (name) |str| assert(!is_empty(str));
+
         return NodeItem{
             .data = data,
             .name = name,
@@ -52,10 +57,18 @@ pub const NodeItem = struct {
         };
     }
 
-    fn to_str(self: *const NodeItem, writer: Writer) void {
-        switch (self.item) {
-            _ => self.to_str(writer),
+    pub fn serialize(self: *const NodeItem, writer: Writer) !void {
+        switch (self.data) {
+            .impl_item => {
+                // TODO:
+            },
+            else => {
+                const name = self.name orelse unreachable;
+                try std.fmt.format(writer, "const {s}", .{name});
+                // self.to_str(writer); // TODO:
+            },
         }
+        try std.fmt.format(writer, "\n", .{});
     }
 };
 

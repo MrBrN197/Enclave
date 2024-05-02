@@ -70,15 +70,22 @@ pub const Node = struct {
     }
 
     pub fn extract_type_item(self: *const Node, parser: *const Parser) NodeItem {
-        _ = self; // autofix
-        _ = parser; // autofix
+
+        // TODO: $visibility_modifier
+
+        const name_field = self.get_field_unchecked("name"); //  $_type_identifier
+        const typename = parser.node_to_string(name_field.node, self.allocator);
+        // TODO: const type_parameters_field = if (self.get_field("type_parameters")) //  $type_parameters
+
+        // TODO: const type_field("type"); // $_type
+        // TODO: $where_clause,
+
         const item_data = NodeItem.ItemData{
             .type_item = .{
-                .definition = null,
+                .definition = null, // TODO:
             },
         };
-
-        const result = NodeItem.init(item_data, "");
+        const result = NodeItem.init(item_data, typename);
         return result;
     }
 
@@ -245,6 +252,7 @@ pub const Node = struct {
             },
         };
 
+        assert(!eql(id, ""));
         const result = NodeItem.init(data, id);
         return result;
     }

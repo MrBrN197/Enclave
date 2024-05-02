@@ -14,6 +14,13 @@ pub fn eql(
     return std.mem.eql(u8, a, b);
 }
 
+pub fn is_empty(str: []const u8) bool {
+    if (str.len == 0) return true;
+
+    for (str) |c| if (c != ' ') return false; // FIX:
+    return true;
+}
+
 // export fn add(a: i32, b: i32) i32 {
 //     return a + b;
 // }

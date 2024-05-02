@@ -85,6 +85,7 @@ pub const Parser = struct {
         const start = c.ts_node_start_point(node);
         const end = c.ts_node_end_point(node);
         const lines = self.get_text_at(start, end);
+
         var size: usize = 0;
         for (lines) |slice| {
             size += slice.len;
@@ -96,6 +97,9 @@ pub const Parser = struct {
             std.mem.copyForwards(u8, buffer[idx..], slice);
             idx += slice.len;
         }
+
+        assert(idx == size);
+        assert(!mem.eql(u8, "", buffer[0..idx]));
 
         return buffer[0..idx];
     }
