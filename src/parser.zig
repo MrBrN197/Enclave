@@ -41,7 +41,7 @@ pub const Parser = struct {
         };
     }
 
-    pub fn free(self: *Parser) !void {
+    pub fn deinit(self: *Parser) !void {
         // Free all of the heap-allocated memory.
         // c.free(string);
         c.ts_tree_delete(self.tree);

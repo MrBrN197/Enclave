@@ -47,5 +47,5 @@ pub fn convert_file(filepath: []const u8) !void {
 
     wrapper.print_syntax_tree();
 
-    try wrapper.free();
+    try wrapper.deinit();
 }
