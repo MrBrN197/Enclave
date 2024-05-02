@@ -6,7 +6,7 @@ const std = @import("std");
 const Writer = @TypeOf(std.io.getStdOut().writer());
 
 pub const NodeItem = struct {
-    name: []const u8,
+    name: ?[]const u8,
     path: ?[]const u8,
     data: ItemData,
 
@@ -14,12 +14,18 @@ pub const NodeItem = struct {
         procedure_item,
         object_item,
         type_item,
+        impl_item,
     };
 
     pub const ItemData = union(Item) {
         procedure_item: Procedure,
         object_item: Object,
         type_item: Type,
+        impl_item: Impl,
+
+        pub const Impl = struct {
+            procedures: ?[]const Procedure,
+        };
 
         pub const Procedure = struct {
             params: ?[]const @This().Args,
@@ -37,7 +43,7 @@ pub const NodeItem = struct {
         };
     };
 
-    pub fn init(data: ItemData, name: []const u8) NodeItem {
+    pub fn init(data: ItemData, name: ?[]const u8) NodeItem {
         return NodeItem{
             .data = data,
             .name = name,

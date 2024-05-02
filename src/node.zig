@@ -113,6 +113,10 @@ pub const Node = struct {
                 const item = self.extract_struct_item(parser);
                 collect.append(item) catch unreachable;
             },
+            .impl_item => {
+                const item = self.extract_impl_item(parser);
+                collect.append(item) catch unreachable;
+            },
 
             else => |tag| {
                 const gray_open = "\u{001b}[38;5;8m\n";
@@ -640,37 +644,31 @@ pub const Node = struct {
             // );
         }
     }
-    fn extract_impl_item(self: *const @This(), parser: *const Parser) void {
-        const name_field = self.get_field("name") orelse unreachable;
+    fn extract_impl_item(self: *const @This(), parser: *const Parser) NodeItem {
+        _ = parser; // autofix
+        if (self.get_field("type_parameters")) |field| { //$type_parameters
+            _ = field; // autofix
 
-        const name = parser.node_to_string(name_field.node, self.allocator);
-        _ = name; // autofix
-
-        if (self.get_field("type_parameters")) |type_parameters_field| {
-            const type_parameters = parser.node_to_string(type_parameters_field.node, self.allocator);
-            _ = type_parameters; // autofix
-            //     out(writer, "Params:\n\t{s}\n", .{type_parameters});
         }
 
-        if (self.get_field("parameters")) |parameters_field| {
-            const parameters = parser.node_to_string(parameters_field.node, self.allocator);
-            _ = parameters; // autofix
-            // out(
-            //     writer,
-            //     "Parameters:\n\t{s}\n",
-            //     .{parameters},
-            // );
+        if (self.get_field("trait")) |_| {
+            // TODO: for trait
+            // ($_type_identifier | $scoped_type_identifier | $generic_type)
+
         }
-        if (self.get_field("return_type")) |return_type_field| {
-            const return_type = parser.node_to_string(return_type_field.node, self.allocator);
-            _ = return_type; // autofix
-            // out(
-            //     writer,
-            //     "Return_type:\n\t{s}\n",
-            //     .{return_type},
-            // );
-        }
+
+        // TODO: const type = extract_type_ref(get_field_unchecked(field("type"))); // $_type
+
+        // TODO: $where_clause?
+        // TODO: if(self.get_field("body") || // $declaration_list
+
+        const item_data = NodeItem.ItemData{
+            .impl_item = .{ .procedures = null }, // TODO:
+        };
+        const result = NodeItem.init(item_data, null);
+        return result;
     }
+
     fn extract_trait_item(self: *const @This(), parser: *const Parser) void {
         const name_field = self.get_field("name") orelse unreachable;
         const name = parser.node_to_string(name_field.node, self.allocator);
