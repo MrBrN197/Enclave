@@ -70,7 +70,6 @@ pub const Node = struct {
     }
 
     pub fn extract_type_item(self: *const Node, parser: *const Parser) NodeItem {
-
         // TODO: $visibility_modifier
 
         const name_field = self.get_field_unchecked("name"); //  $_type_identifier
@@ -542,6 +541,74 @@ pub const Node = struct {
         // out(writer, "\n", .{});
     }
 
+    fn extract_type_ref(self: *const @This(), parser: *const Parser) ?NodeItem.ItemData.Type {
+        const name = blk: {
+            switch (self.node_type) {
+                .abstract_type => {
+                    unreachable;
+                },
+                .reference_type => {
+                    unreachable;
+                },
+                .metavariable => {
+                    unreachable;
+                },
+                .pointer_type => {
+                    unreachable;
+                },
+                .generic_type => {
+                    unreachable;
+                },
+                .scoped_type_identifier => {
+                    unreachable;
+                },
+                .tuple_type => {
+                    unreachable;
+                },
+                .unit_type => {
+                    return null;
+                },
+                .array_type => {
+                    unreachable;
+                },
+                .function_type => {
+                    unreachable;
+                },
+                .macro_invocation => {
+                    unreachable;
+                },
+                .never_type => {
+                    break :blk "noreturn";
+                },
+                .dynamic_type => {
+                    unreachable;
+                },
+                .bounded_type => {
+                    unreachable;
+                },
+                .removed_trait_bound => {
+                    unreachable;
+                },
+                .primitive_type => {
+                    // TODO: test
+
+                    const text = parser.node_to_string(self.node, self.allocator);
+                    break :blk text;
+                },
+                else => { // _type_identifier
+                    const text = parser.node_to_string(self.node, self.allocator);
+                    break :blk text;
+                },
+            }
+        };
+
+        const result = NodeItem.ItemData.Type{
+            .name = name,
+            .definition = null, // TODO:
+        };
+        return result;
+    }
+
     fn extract_function_item(self: *const @This(), parser: *const Parser) NodeItem {
         // TODO: self.get_field("visibility_modifier")
         // TODO: self.get_field("function_modifiers")
@@ -554,19 +621,21 @@ pub const Node = struct {
         const parameters_field = self.get_field_unchecked("parameters");
         const params = parameters_field.extract_parameters(parser);
 
-        // TODO: self.get_field("return_type)
         // TODO: get_field("where_clause"),
 
-        // const return_type =  if (self.get_field("return_type")) |return_type| {
-        // TODO: extract_type_ref();
-        //}_type
+        const return_type = blk: {
+            if (self.get_field("return_type")) |return_type| {
+                const _type = return_type.extract_type_ref(parser);
+                break :blk _type;
+            } else break :blk null;
+        };
 
         // TODO: field('body') //  $.block;
 
         const item_data = NodeItem.ItemData{
             .procedure_item = .{
                 .params = params.items,
-                // TODO: .return_type_str = return_type,
+                .return_type = return_type,
             },
         };
 

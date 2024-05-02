@@ -32,6 +32,7 @@ pub const NodeItem = struct {
 
         pub const Procedure = struct {
             params: []const Param,
+            return_type: ?Type,
 
             pub const Param = struct {
                 name: []const u8,
@@ -94,6 +95,13 @@ pub const NodeItem = struct {
                 }
 
                 try std.fmt.format(writer, ")", .{});
+
+                if (data.return_type) |return_type| {
+                    try std.fmt.format(writer, "{s}", .{return_type.name});
+                } else {
+                    try std.fmt.format(writer, "void", .{});
+                }
+
                 // self.to_str(writer); // TODO:
             },
             else => {
@@ -187,6 +195,7 @@ pub const NodeType = enum {
     match_block,
     match_expression,
     match_pattern,
+    metavariable,
     mod_item,
     mutable_specifier,
     mut_pattern,
@@ -199,6 +208,7 @@ pub const NodeType = enum {
     parameters,
     parenthesized_expression,
     pointer_type,
+    primitive_type,
     qualified_type,
     range_expression,
     range_pattern,
