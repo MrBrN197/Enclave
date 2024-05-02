@@ -8,7 +8,7 @@ const eprintln = @import("./root.zig").eprintln;
 const eprint = @import("./root.zig").eprint;
 const eql = @import("./root.zig").eql;
 
-const main = @import("./main.zig"); // TODO:
+const Parser = @import("./parser.zig").Parser; // TODO:
 
 const NodeType = @import("./node/types.zig").NodeType;
 
@@ -131,7 +131,7 @@ pub const Node = struct {
         return children;
     }
 
-    pub fn write_to(self: *const Node, parser: *const main.Parser, writer: Writer) void {
+    pub fn write_to(self: *const Node, parser: *const Parser, writer: Writer) void {
         switch (self.node_type) {
             .source_file => {
                 var children = self.get_children_named();
@@ -162,18 +162,18 @@ pub const Node = struct {
         }
     }
 
-    fn type_identifier_str(self: *const @This(), parser: *const main.Parser, writer: Writer) void {
+    fn type_identifier_str(self: *const @This(), parser: *const Parser, writer: Writer) void {
         const text = parser.node_to_string(self.node, self.allocator);
         out(writer, "{s}", .{text});
     }
 
-    fn arguments_str(self: *const @This(), parser: *const main.Parser, writer: Writer) void {
+    fn arguments_str(self: *const @This(), parser: *const Parser, writer: Writer) void {
         _ = self; // autofix
         _ = parser; // autofix
         _ = writer; // autofix
     }
 
-    fn struct_item_str(self: *const @This(), parser: *const main.Parser, writer: Writer) void {
+    fn struct_item_str(self: *const @This(), parser: *const Parser, writer: Writer) void {
         const name_field = self.get_field("name") orelse unreachable; // $._type_identifier),
 
         if (self.get_field("type_parameters")) |field| field.write_to(parser, writer);
@@ -187,7 +187,7 @@ pub const Node = struct {
         out(writer, "\n", .{});
     }
 
-    fn body_str(self: *const @This(), parser: *const main.Parser, writer: Writer) void {
+    fn body_str(self: *const @This(), parser: *const Parser, writer: Writer) void {
         const node_name = get_type(self);
 
         if (eql("field_declaration_list", node_name)) {
@@ -219,7 +219,7 @@ pub const Node = struct {
         }
     }
 
-    fn const_item_str(self: *const @This(), parser: *const main.Parser, writer: Writer) void {
+    fn const_item_str(self: *const @This(), parser: *const Parser, writer: Writer) void {
         const name_field = self.get_field("name") orelse unreachable;
 
         const name = parser.node_to_string(name_field.node, self.allocator);
@@ -247,7 +247,7 @@ pub const Node = struct {
             );
         }
     }
-    fn macro_definition_str(self: *const @This(), parser: *const main.Parser, writer: Writer) void {
+    fn macro_definition_str(self: *const @This(), parser: *const Parser, writer: Writer) void {
         const name_field = self.get_field("name") orelse unreachable;
 
         const name = parser.node_to_string(name_field.node, self.allocator);
@@ -275,7 +275,7 @@ pub const Node = struct {
             );
         }
     }
-    fn empty_statement_str(self: *const @This(), parser: *const main.Parser, writer: Writer) void {
+    fn empty_statement_str(self: *const @This(), parser: *const Parser, writer: Writer) void {
         const name_field = self.get_field("name") orelse unreachable;
 
         const name = parser.node_to_string(name_field.node, self.allocator);
@@ -303,11 +303,11 @@ pub const Node = struct {
             );
         }
     }
-    fn attribute_item_str(self: *const @This(), parser: *const main.Parser, writer: Writer) void {
+    fn attribute_item_str(self: *const @This(), parser: *const Parser, writer: Writer) void {
         out(writer, "//", .{});
         out(writer, "{s}", .{parser.node_to_string(self.node, self.allocator)});
     }
-    fn inner_attribute_item_str(self: *const @This(), parser: *const main.Parser, writer: Writer) void {
+    fn inner_attribute_item_str(self: *const @This(), parser: *const Parser, writer: Writer) void {
         const name_field = self.get_field("name") orelse unreachable;
 
         const name = parser.node_to_string(name_field.node, self.allocator);
@@ -335,7 +335,7 @@ pub const Node = struct {
             );
         }
     }
-    fn mod_item_str(self: *const @This(), parser: *const main.Parser, writer: Writer) void {
+    fn mod_item_str(self: *const @This(), parser: *const Parser, writer: Writer) void {
         const name_field = self.get_field("name") orelse unreachable;
 
         const name = parser.node_to_string(name_field.node, self.allocator);
@@ -363,7 +363,7 @@ pub const Node = struct {
             );
         }
     }
-    fn foreign_mod_item_str(self: *const @This(), parser: *const main.Parser, writer: Writer) void {
+    fn foreign_mod_item_str(self: *const @This(), parser: *const Parser, writer: Writer) void {
         const name_field = self.get_field("name") orelse unreachable;
 
         const name = parser.node_to_string(name_field.node, self.allocator);
@@ -391,7 +391,7 @@ pub const Node = struct {
             );
         }
     }
-    fn union_item_str(self: *const @This(), parser: *const main.Parser, writer: Writer) void {
+    fn union_item_str(self: *const @This(), parser: *const Parser, writer: Writer) void {
         const name_field = self.get_field("name") orelse unreachable;
 
         const name = parser.node_to_string(name_field.node, self.allocator);
@@ -419,7 +419,7 @@ pub const Node = struct {
             );
         }
     }
-    fn type_item_str(self: *const @This(), parser: *const main.Parser, writer: Writer) void {
+    fn type_item_str(self: *const @This(), parser: *const Parser, writer: Writer) void {
         const name_field = self.get_field_unchecked("name"); // $._type_identifier),
 
         const name = parser.node_to_string(name_field.node, self.allocator);
@@ -434,7 +434,7 @@ pub const Node = struct {
         type_field.write_to(parser, writer);
         out(writer, ";\n", .{});
     }
-    fn extern_crate_declaration_str(self: *const @This(), parser: *const main.Parser, writer: Writer) void {
+    fn extern_crate_declaration_str(self: *const @This(), parser: *const Parser, writer: Writer) void {
         const name_field = self.get_field("name") orelse unreachable;
         const name = parser.node_to_string(name_field.node, self.allocator);
 
@@ -456,7 +456,7 @@ pub const Node = struct {
 
         out(writer, "\n", .{});
     }
-    fn function_item_str(self: *const @This(), parser: *const main.Parser, writer: Writer) void {
+    fn function_item_str(self: *const @This(), parser: *const Parser, writer: Writer) void {
 
         // optional($.visibility_modifier),
         // optional($.function_modifiers),
@@ -484,7 +484,7 @@ pub const Node = struct {
         out(writer, "}}\n", .{});
     }
 
-    fn parameters_str(self: *const @This(), parser: *const main.Parser, writer: Writer) void { //TODO: writer
+    fn parameters_str(self: *const @This(), parser: *const Parser, writer: Writer) void { //TODO: writer
 
         const children = self.get_children_named();
         for (children.items) |child| {
@@ -507,7 +507,7 @@ pub const Node = struct {
             out(writer, ",", .{});
         }
     }
-    fn call_expression_str(self: *const @This(), parser: *const main.Parser, writer: Writer) void { //TODO: writer
+    fn call_expression_str(self: *const @This(), parser: *const Parser, writer: Writer) void { //TODO: writer
 
         const function = self.get_field("function") orelse unreachable;
         const args = self.get_field("arguments") orelse unreachable;
@@ -523,7 +523,7 @@ pub const Node = struct {
         }
         out(writer, "\n", .{});
     }
-    fn enum_item_str(self: *const @This(), parser: *const main.Parser, writer: Writer) void {
+    fn enum_item_str(self: *const @This(), parser: *const Parser, writer: Writer) void {
         const name_field = self.get_field("name") orelse unreachable;
 
         const name = parser.node_to_string(name_field.node, self.allocator);
@@ -551,7 +551,7 @@ pub const Node = struct {
             );
         }
     }
-    fn function_signature_item_str(self: *const @This(), parser: *const main.Parser, writer: Writer) void {
+    fn function_signature_item_str(self: *const @This(), parser: *const Parser, writer: Writer) void {
         const name_field = self.get_field("name") orelse unreachable;
 
         const name = parser.node_to_string(name_field.node, self.allocator);
@@ -579,7 +579,7 @@ pub const Node = struct {
             );
         }
     }
-    fn impl_item_str(self: *const @This(), parser: *const main.Parser, writer: Writer) void {
+    fn impl_item_str(self: *const @This(), parser: *const Parser, writer: Writer) void {
         const name_field = self.get_field("name") orelse unreachable;
 
         const name = parser.node_to_string(name_field.node, self.allocator);
@@ -607,7 +607,7 @@ pub const Node = struct {
             );
         }
     }
-    fn trait_item_str(self: *const @This(), parser: *const main.Parser, writer: Writer) void {
+    fn trait_item_str(self: *const @This(), parser: *const Parser, writer: Writer) void {
         const name_field = self.get_field("name") orelse unreachable;
         const name = parser.node_to_string(name_field.node, self.allocator);
         _ = name; // autofix
@@ -634,35 +634,7 @@ pub const Node = struct {
             );
         }
     }
-    fn associated_type_str(self: *const @This(), parser: *const main.Parser, writer: Writer) void {
-        const name_field = self.get_field("name") orelse unreachable;
-
-        const name = parser.node_to_string(name_field.node, self.allocator);
-        _ = name; // autofix
-
-        if (self.get_field("type_parameters")) |type_parameters_field| {
-            const type_parameters = parser.node_to_string(type_parameters_field.node, self.allocator);
-            out(writer, "Params:\n\t{s}\n", .{type_parameters});
-        }
-
-        if (self.get_field("parameters")) |parameters_field| {
-            const parameters = parser.node_to_string(parameters_field.node, self.allocator);
-            out(
-                writer,
-                "Parameters:\n\t{s}\n",
-                .{parameters},
-            );
-        }
-        if (self.get_field("return_type")) |return_type_field| {
-            const return_type = parser.node_to_string(return_type_field.node, self.allocator);
-            out(
-                writer,
-                "Return_type:\n\t{s}\n",
-                .{return_type},
-            );
-        }
-    }
-    fn let_declaration_str(self: *const @This(), parser: *const main.Parser, writer: Writer) void {
+    fn associated_type_str(self: *const @This(), parser: *const Parser, writer: Writer) void {
         const name_field = self.get_field("name") orelse unreachable;
 
         const name = parser.node_to_string(name_field.node, self.allocator);
@@ -690,13 +662,41 @@ pub const Node = struct {
             );
         }
     }
-    fn self_str(self: *const @This(), parser: *const main.Parser, writer: Writer) void {
+    fn let_declaration_str(self: *const @This(), parser: *const Parser, writer: Writer) void {
+        const name_field = self.get_field("name") orelse unreachable;
+
+        const name = parser.node_to_string(name_field.node, self.allocator);
+        _ = name; // autofix
+
+        if (self.get_field("type_parameters")) |type_parameters_field| {
+            const type_parameters = parser.node_to_string(type_parameters_field.node, self.allocator);
+            out(writer, "Params:\n\t{s}\n", .{type_parameters});
+        }
+
+        if (self.get_field("parameters")) |parameters_field| {
+            const parameters = parser.node_to_string(parameters_field.node, self.allocator);
+            out(
+                writer,
+                "Parameters:\n\t{s}\n",
+                .{parameters},
+            );
+        }
+        if (self.get_field("return_type")) |return_type_field| {
+            const return_type = parser.node_to_string(return_type_field.node, self.allocator);
+            out(
+                writer,
+                "Return_type:\n\t{s}\n",
+                .{return_type},
+            );
+        }
+    }
+    fn self_str(self: *const @This(), parser: *const Parser, writer: Writer) void {
         _ = writer; // autofix
         _ = parser; // autofix
         _ = self; // autofix
         //
     }
-    fn identifier_str(self: *const @This(), parser: *const main.Parser, writer: Writer) void {
+    fn identifier_str(self: *const @This(), parser: *const Parser, writer: Writer) void {
         assert(eql("identifier", get_type(self)) or
             eql("type_identifier", get_type(self)) or
             eql("field_identifier", get_type(self)));
@@ -704,17 +704,17 @@ pub const Node = struct {
         const source = parser.node_to_string(self.node, self.allocator);
         out(writer, "{s}", .{source});
     }
-    fn super_str(self: *const @This(), parser: *const main.Parser, writer: Writer) void {
+    fn super_str(self: *const @This(), parser: *const Parser, writer: Writer) void {
         _ = writer; // autofix
         _ = parser; // autofix
         _ = self; // autofix
     }
-    fn crate_str(self: *const @This(), parser: *const main.Parser, writer: Writer) void {
+    fn crate_str(self: *const @This(), parser: *const Parser, writer: Writer) void {
         _ = writer; // autofix
         _ = parser; // autofix
         _ = self; // autofix
     }
-    fn scoped_identifier_str(self: *const @This(), parser: *const main.Parser, writer: Writer) void {
+    fn scoped_identifier_str(self: *const @This(), parser: *const Parser, writer: Writer) void {
         assert(eql(get_type(self), "scoped_identifier"));
 
         if (self.get_field("path")) |field| {
@@ -751,7 +751,7 @@ pub const Node = struct {
             name_field.write_to(parser, writer);
         } else unreachable;
     }
-    fn bracketed_type_str(self: *const @This(), parser: *const main.Parser, writer: Writer) void {
+    fn bracketed_type_str(self: *const @This(), parser: *const Parser, writer: Writer) void {
         const sym = get_type(self);
 
         // TODO: bracketed type
@@ -761,7 +761,7 @@ pub const Node = struct {
             self.write_to(parser, writer);
         }
     }
-    fn generic_type_with_turbofish_str(self: *const @This(), parser: *const main.Parser, writer: Writer) void {
+    fn generic_type_with_turbofish_str(self: *const @This(), parser: *const Parser, writer: Writer) void {
         const type_field = self.get_field_unchecked("type");
 
         assert(eql(type_field.sym, "scoped_identifier") or eql(type_field.sym, "type_identifier"));
@@ -774,19 +774,19 @@ pub const Node = struct {
         for (type_arguments.items) |ty_arg| ty_arg.write_to(parser, writer);
         out(writer, ">", .{});
     }
-    fn _reserved_identifier_str(self: *const @This(), parser: *const main.Parser, writer: Writer) void {
+    fn _reserved_identifier_str(self: *const @This(), parser: *const Parser, writer: Writer) void {
         _ = writer; // autofix
         _ = parser; // autofix
         _ = self; // autofix
         //
     }
-    fn use_as_clause_str(self: *const @This(), parser: *const main.Parser, writer: Writer) void {
+    fn use_as_clause_str(self: *const @This(), parser: *const Parser, writer: Writer) void {
         _ = writer; // autofix
         _ = parser; // autofix
         _ = self; // autofix
         //
     }
-    fn use_list_str(self: *const @This(), parser: *const main.Parser, writer: Writer) void {
+    fn use_list_str(self: *const @This(), parser: *const Parser, writer: Writer) void {
         const claues = get_children_named(self); // _use_clause
 
         for (claues.items) |clause| {
@@ -804,7 +804,7 @@ pub const Node = struct {
             }
         }
     }
-    fn _path_str(self: *const @This(), parser: *const main.Parser, writer: Writer) void {
+    fn _path_str(self: *const @This(), parser: *const Parser, writer: Writer) void {
         _ = writer; // autofix
         _ = parser; // autofix
         _ = self; // autofix
@@ -817,7 +817,7 @@ pub const Node = struct {
         // $.scoped_identifier,
         // $._reserved_identifier,
     }
-    fn scoped_use_list_str(self: *const @This(), parser: *const main.Parser, writer: Writer) void {
+    fn scoped_use_list_str(self: *const @This(), parser: *const Parser, writer: Writer) void {
         assert(eql(get_type(self), "scoped_use_list"));
 
         if (self.get_field("path")) |path_field| { // $._path
@@ -826,13 +826,13 @@ pub const Node = struct {
         const list_field = self.get_field("list") orelse unreachable; // $.use_list),
         list_field.write_to(parser, writer);
     }
-    fn use_wildcard_str(self: *const @This(), parser: *const main.Parser, writer: Writer) void {
+    fn use_wildcard_str(self: *const @This(), parser: *const Parser, writer: Writer) void {
         _ = writer; // autofix
         _ = parser; // autofix
         assert(eql(get_type(self), "use_wildcard"));
         //
     }
-    fn use_declaration_str(self: *const @This(), parser: *const main.Parser, writer: Writer) void {
+    fn use_declaration_str(self: *const @This(), parser: *const Parser, writer: Writer) void {
         const argument_field = self.get_field("argument") orelse unreachable;
 
         const use_clause_sym = get_type(argument_field);
@@ -860,7 +860,7 @@ pub const Node = struct {
 
         out(writer, "\n", .{});
     }
-    fn static_item_str(self: *const @This(), parser: *const main.Parser, writer: Writer) void {
+    fn static_item_str(self: *const @This(), parser: *const Parser, writer: Writer) void {
         const name_field = self.get_field("name") orelse unreachable;
 
         const name = parser.node_to_string(name_field.node, self.allocator);
@@ -888,12 +888,12 @@ pub const Node = struct {
             );
         }
     }
-    fn abstract_type_str(self: *const @This(), parser: *const main.Parser, writer: Writer) void {
+    fn abstract_type_str(self: *const @This(), parser: *const Parser, writer: Writer) void {
         _ = parser; // autofix
         _ = self; // autofix
         out(writer, "TODO: -> {{{{ABSTRACT_TYPE}}}}", .{});
     }
-    fn reference_type_str(self: *const @This(), parser: *const main.Parser, writer: Writer) void {
+    fn reference_type_str(self: *const @This(), parser: *const Parser, writer: Writer) void {
         // NOTE: lifetime ignored
 
         out(writer, "*", .{});
@@ -907,7 +907,7 @@ pub const Node = struct {
         ty_field.write_to(parser, writer);
     }
 
-    fn pointer_type_str(self: *const @This(), parser: *const main.Parser, writer: Writer) void {
+    fn pointer_type_str(self: *const @This(), parser: *const Parser, writer: Writer) void {
         const tyfield = self.get_field("type") orelse unreachable;
 
         out(writer, "*", .{});
@@ -919,7 +919,7 @@ pub const Node = struct {
 
         tyfield.write_to(parser, writer);
     }
-    fn generic_type_str(self: *const @This(), parser: *const main.Parser, writer: Writer) void {
+    fn generic_type_str(self: *const @This(), parser: *const Parser, writer: Writer) void {
         const type_field = self.get_field_unchecked("type");
 
         assert((eql(type_field.sym, "type_identifier") or
@@ -935,7 +935,7 @@ pub const Node = struct {
         out(writer, ">", .{});
     }
 
-    fn scoped_type_identifier_str(self: *const @This(), parser: *const main.Parser, writer: Writer) void {
+    fn scoped_type_identifier_str(self: *const @This(), parser: *const Parser, writer: Writer) void {
         const name_field = self.get_field("name") orelse unreachable;
         const path_field = self.get_field("path") orelse unreachable;
 
@@ -956,7 +956,7 @@ pub const Node = struct {
         out(writer, ".", .{});
         out(writer, "{s}", .{name});
     }
-    fn tuple_type_str(self: *const @This(), parser: *const main.Parser, writer: Writer) void {
+    fn tuple_type_str(self: *const @This(), parser: *const Parser, writer: Writer) void {
         const types = get_children_named(self);
         out(writer, "struct {{", .{});
         for (types.items) |ty| {
@@ -966,11 +966,11 @@ pub const Node = struct {
         out(writer, "}}", .{});
     }
 
-    fn unit_type_str(_: *const @This(), _: *const main.Parser, writer: Writer) void {
+    fn unit_type_str(_: *const @This(), _: *const Parser, writer: Writer) void {
         out(writer, "void", .{});
     }
 
-    fn array_type_str(self: *const @This(), parser: *const main.Parser, writer: Writer) void {
+    fn array_type_str(self: *const @This(), parser: *const Parser, writer: Writer) void {
         const element = self.get_field("element") orelse unreachable;
 
         if (self.get_field("length")) |length_field| {
@@ -984,38 +984,38 @@ pub const Node = struct {
 
         element.write_to(parser, writer);
     }
-    fn function_type_str(self: *const @This(), parser: *const main.Parser, writer: Writer) void {
+    fn function_type_str(self: *const @This(), parser: *const Parser, writer: Writer) void {
         _ = parser; // autofix
         _ = self; // autofix
         out(writer, "TODO:  -> {{{{FUNCTION_TYPE}}}}", .{});
     }
-    fn macro_invocation_str(self: *const @This(), parser: *const main.Parser, writer: Writer) void {
+    fn macro_invocation_str(self: *const @This(), parser: *const Parser, writer: Writer) void {
         _ = parser; // autofix
 
         _ = self; // autofix
         out(writer, "TODO:  -> {{{{MACRO_INVOCATION}}}}", .{});
     }
-    fn never_type_str(self: *const @This(), parser: *const main.Parser, writer: Writer) void {
+    fn never_type_str(self: *const @This(), parser: *const Parser, writer: Writer) void {
         _ = parser; // autofix
         _ = self; // autofix
         out(writer, "noreturn", .{});
     }
-    fn dynamic_type_str(self: *const @This(), parser: *const main.Parser, writer: Writer) void {
+    fn dynamic_type_str(self: *const @This(), parser: *const Parser, writer: Writer) void {
         _ = parser; // autofix
         _ = self; // autofix
         out(writer, "TODO:  -> {{{{DYNAMIC_TYPE}}}}", .{});
     }
-    fn bounded_type_str(self: *const @This(), parser: *const main.Parser, writer: Writer) void {
+    fn bounded_type_str(self: *const @This(), parser: *const Parser, writer: Writer) void {
         _ = parser; // autofix
         _ = self; // autofix
         out(writer, "TODO:  -> {{{{BOUNDED_TYPE}}}}", .{});
     }
-    fn removed_trait_bound_str(self: *const @This(), parser: *const main.Parser, writer: Writer) void {
+    fn removed_trait_bound_str(self: *const @This(), parser: *const Parser, writer: Writer) void {
         _ = parser; // autofix
         _ = self; // autofix
         out(writer, "TODO:  -> {{{{REMOVED_TRAIT_BOUND}}}}", .{});
     }
-    fn primitive_type_str(self: *const @This(), parser: *const main.Parser, writer: Writer) void {
+    fn primitive_type_str(self: *const @This(), parser: *const Parser, writer: Writer) void {
         // TODO: assert type ==  $.primitive_type;
         const source = parser.node_to_string(self.node, self.allocator);
         out(writer, "{s}", source, .{});
