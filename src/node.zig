@@ -70,32 +70,12 @@ pub const Node = struct {
     }
 
     pub fn extract_type_item(self: *const Node, parser: *const Parser) NodeItem {
+        _ = self; // autofix
         _ = parser; // autofix
-        const item_data = blk: {
-            if (eql(self.sym, "type_item")) {
-                const data = NodeItem.ItemData{
-                    .type_item = .{
-                        .definition = null,
-                    },
-                };
-                break :blk data;
-            } else if (eql(self.sym, "function_item")) {
-                const data = NodeItem.ItemData{
-                    .procedure_item = .{
-                        .args = &[_][]const u8{""},
-                    },
-                };
-
-                break :blk data;
-            } else if (eql(self.sym, "struct_item")) {
-                const data = NodeItem.ItemData{
-                    .object_item = .{
-                        .fields = null,
-                        .procedures = null,
-                    },
-                };
-                break :blk data;
-            } else unreachable;
+        const item_data = NodeItem.ItemData{
+            .type_item = .{
+                .definition = null,
+            },
         };
 
         const result = NodeItem.init(item_data, "");
@@ -123,6 +103,10 @@ pub const Node = struct {
 
             .type_item => {
                 const item = self.extract_type_item(parser);
+                collect.append(item) catch unreachable;
+            },
+            .struct_item => {
+                const item = self.extract_struct_item(parser);
                 collect.append(item) catch unreachable;
             },
 
@@ -209,19 +193,33 @@ pub const Node = struct {
         _ = parser; // autofix
     }
 
-    fn extract_struct_item(self: *const @This(), parser: *const Parser) void {
-        const name_field = self.get_field("name") orelse unreachable; // $._type_identifier),
+    fn extract_struct_item(self: *const @This(), parser: *const Parser) NodeItem {
+        // TODO: if get_field(self,"visibility_modifier") ||
 
-        if (self.get_field("type_parameters")) |field| field.write_to(parser);
+        assert(eql(self.sym, "struct_item"));
 
-        const name = parser.node_to_string(name_field.node, self.allocator);
-        _ = name; // autofix
-        // out(writer, "const {s}", .{name});
+        const id_field = self.get_field_unchecked("name"); // $.identifier,
+        // if (self.get_field(self, "type_parameters")) ||  // TODO:
 
-        if (self.get_field("body")) |field| {
-            field.write_to(parser);
+        const id = parser.node_to_string(id_field.node, self.allocator);
+
+        const data = NodeItem.ItemData{
+            .object_item = .{
+                .fields = null, // TODO:
+                .procedures = null, // TODO:
+            },
+        };
+
+        if (self.get_field("body")) |body_field| {
+            // TODO: if get_field(body_field, "where_clause") |where_clause field| {}
+            if (eql(body_field.sym, "field_declaration_list")) {
+                // TODO:
+            } else if (eql(body_field.sym, "ordered_field_declaration_list")) {
+                // TODO:
+            }
         }
-        // out(writer, "\n", .{});
+        const result = NodeItem.init(data, id);
+        return result;
     }
 
     fn extract_body(self: *const @This(), parser: *const Parser) void {
@@ -508,29 +506,36 @@ pub const Node = struct {
         // out(writer, "\n", .{});
     }
 
-    fn extract_function_item(self: *const @This(), parser: *const Parser) void {
-        // optional($.visibility_modifier),
-        // optional($.function_modifiers),
+    fn extract_function_item(self: *const @This(), parser: *const Parser) NodeItem {
+        _ = parser; // autofix
+        // TODO: self.get_field("visibility_modifier")
+        // TODO: self.get_field("function_modifiers")
 
-        if (self.get_field("name")) |name_field| {
-            const id = parser.node_to_string(name_field.node, self.allocator);
-            _ = id; // autofix
-            //     out(writer, "{s}", .{id});
-        }
+        const name_field = self.get_field("name");
+        assert(name_field.sym, "identifier"); // TODO: $metavariable
+        const name = Parser.node_to_string(name_field, self.allocator);
 
-        if (self.get_field("type_parameters")) |type_parameters_field| type_parameters_field.write_to(parser);
+        // TODO: self.get_field("type_parameters")
+        // TODO: self.get_field("parameters")
 
-        if (self.get_field("parameters")) |parameters_field| parameters_field.write_to(parser);
-        if (self.get_field("return_type")) |return_type| { // _type
-            return_type.write_to(parser);
-        } else {
-            self.unit_type_str(parser);
-        }
+        // TODO: self.get_field("return_type)
+        // TODO: get_field("where_clause"),
 
-        // out(writer, " {{\n", .{});
-        // optional($.where_clause),
-        // field('body', $.block),
-        // out(writer, "}}\n", .{});
+        // const return_type =  if (self.get_field("return_type")) |return_type| {
+        // TODO: extract_type_ref();
+        //}_type
+
+        // TODO: field('body') //  $.block;
+
+        const item_data = NodeItem.ItemData{
+            .procedure_item = .{
+                .params = null,
+                // TODO: .return_type_str = return_type,
+            },
+        };
+
+        const result = NodeItem.init(item_data, name);
+        return result;
     }
 
     fn extract_parameters(self: *const @This(), parser: *const Parser) void { //TODO: writer

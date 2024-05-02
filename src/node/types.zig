@@ -22,7 +22,7 @@ pub const NodeItem = struct {
         type_item: Type,
 
         pub const Procedure = struct {
-            args: []const @This().Args,
+            params: ?[]const @This().Args,
             const Args = []const u8;
         };
 
