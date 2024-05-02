@@ -93,7 +93,7 @@ pub const Node = struct {
                     child.extract_node_items(parser, collect);
                 }
             },
-            // .function_item => self.function_item_str(parser),
+
             // .generic_type => self.generic_type_str(parser),
             // .parameters => self.parameters_str(parser),
             // .scoped_type_identifier => self.scoped_type_identifier_str(parser),
@@ -103,6 +103,10 @@ pub const Node = struct {
 
             .type_item => {
                 const item = self.extract_type_item(parser);
+                collect.append(item) catch unreachable;
+            },
+            .function_item => {
+                const item = self.extract_function_item(parser);
                 collect.append(item) catch unreachable;
             },
             .struct_item => {
@@ -507,13 +511,12 @@ pub const Node = struct {
     }
 
     fn extract_function_item(self: *const @This(), parser: *const Parser) NodeItem {
-        _ = parser; // autofix
         // TODO: self.get_field("visibility_modifier")
         // TODO: self.get_field("function_modifiers")
 
-        const name_field = self.get_field("name");
-        assert(name_field.sym, "identifier"); // TODO: $metavariable
-        const name = Parser.node_to_string(name_field, self.allocator);
+        const name_field = self.get_field_unchecked("name");
+        assert(eql(name_field.sym, "identifier")); // TODO: $metavariable
+        const name = parser.node_to_string(name_field.node, self.allocator);
 
         // TODO: self.get_field("type_parameters")
         // TODO: self.get_field("parameters")

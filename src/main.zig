@@ -46,8 +46,7 @@ pub fn convert_file(filepath: []const u8) !void {
     var wrapper = Parser.init(read, gpa);
 
     const items = wrapper.parse();
-    _ = items; // autofix
-    // eprintln("Items Len: {}", .{items.len});
+    eprintln("Items Len: {}", .{items.len});
     // wrapper.print_syntax_tree();
 
     try wrapper.deinit();
