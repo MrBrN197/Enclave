@@ -7,10 +7,10 @@ for file in $watch_path
     test -z $file; and continue
 
     if ! test -d $file; and ! test -f $file
-        printf "\e[38;5;1mfile '%s' does not exist\n\e[m" $file
+        printf "\e[38;5;1mfile '%s' does not exist\n\e[m" $file >&2
         exit 1
     end
-    printf "Watching %s\n" $file
+    printf "Watching %s\n" $file >&2
 end
 
 function clear
@@ -26,7 +26,7 @@ while true
         -r $watch_path &>/dev/null
 
     if ! test $status -eq 0
-        printf "\e[38;1;mFailed to WatchFiles\e[m\n"
+        printf "\e[38;1;mFailed to WatchFiles\e[m\n" >&2
         exit
     end
 
@@ -37,7 +37,7 @@ while true
     set -l cmd_status $status
     if ! string match -q $cmd_status 0
         set_color red
-        printf "Failed: with status $cmd_status\n"
+        printf "Failed: with status $cmd_status\n" >&2
         set_color normal
     end
 end

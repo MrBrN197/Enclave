@@ -19,8 +19,17 @@ const gpa = gpa_allocator.allocator();
 pub const std_options = std.Options{ .log_level = .info };
 
 pub fn main() void {
-    const filepath = "./examples/example.rs";
-    _ = convert_file(filepath) catch |e| {
+    // const filepath = "./examples/example.rs";
+
+    var argv = std.process.args();
+    assert(argv.skip());
+
+    const filepath = argv.next() orelse {
+        eprintln("error: filepath required", .{});
+        std.process.exit(1);
+    };
+
+    convert_file(filepath) catch |e| {
         switch (e) {
             error.FileNotFound => eprintln("File Path Not Found: {s}", .{filepath}),
 
