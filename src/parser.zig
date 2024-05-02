@@ -12,7 +12,6 @@ const eprint = root.eprint;
 const eprintln = root.eprintln;
 
 pub const Parser = struct {
-    items: std.ArrayList(NodeItem), // TODO:
     lines_iter: Lines,
     parser: ?*c.TSParser,
     tree: ?*c.TSTree,
@@ -34,7 +33,6 @@ pub const Parser = struct {
 
         return Parser{
             .allocator = allocator,
-            .items = std.ArrayList(NodeItem).init(allocator),
             .lines_iter = mem.splitScalar(u8, source_code, '\n'),
             .parser = parser,
             .tree = tree,
@@ -51,22 +49,36 @@ pub const Parser = struct {
     }
 
     pub fn print_syntax_tree(self: *const Parser) void {
+        _ = self; // autofix
+        // var lines = self.lines_iter;
+        // lines.reset(); // TODO:
+
+        // const root_node = c.ts_tree_root_node(self.tree);
+        // const current_node = Node.init(root_node, self.allocator);
+
+        // eprint("\n" ++ "=" ** 20, .{});
+        // eprint("{s}", .{current_node.sym});
+        // eprintln("=" ** 20, .{});
+
+        // const stdout = std.io.getStdOut();
+        // const writer = stdout.writer();
+
+        // current_node.write_to(self, writer);
+    }
+
+    pub fn parse(self: *const Parser) [](NodeItem) {
         var lines = self.lines_iter;
+        lines.reset(); //TODO:
 
-        lines.reset();
-
+        var result = std.ArrayList(NodeItem).init(self.allocator);
         const root_node = c.ts_tree_root_node(self.tree);
+        assert(!c.ts_node_is_null(root_node));
+
         const current_node = Node.init(root_node, self.allocator);
-        // if (true) continue;
 
-        eprint("\n" ++ "=" ** 20, .{});
-        eprint("{s}", .{current_node.sym});
-        eprintln("=" ** 20, .{});
+        current_node.extract_node_items(self, &result);
 
-        const stdout = std.io.getStdOut();
-        const writer = stdout.writer();
-
-        current_node.write_to(self, writer);
+        return result.items;
     }
 
     pub fn node_to_string(self: *const Parser, node: c.TSNode, allocator: mem.Allocator) []const u8 {

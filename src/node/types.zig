@@ -2,6 +2,57 @@ const eql = @import("../root.zig").eql;
 const eprintln = @import("../root.zig").eprintln;
 const eprint = @import("../root.zig").eprint;
 
+const std = @import("std");
+const Writer = @TypeOf(std.io.getStdOut().writer());
+
+pub const NodeItem = struct {
+    name: []const u8,
+    path: ?[]const u8,
+    data: ItemData,
+
+    pub const Item = enum {
+        procedure_item,
+        object_item,
+        type_item,
+    };
+
+    pub const ItemData = union(Item) {
+        procedure_item: Procedure,
+        object_item: Object,
+        type_item: Type,
+
+        pub const Procedure = struct {
+            args: []const @This().Args,
+            const Args = []const u8;
+        };
+
+        pub const Object = struct {
+            const Field = struct { name: []const u8, type_ref: ?*const Type };
+            fields: ?[]Field,
+            procedures: ?[]const Procedure,
+        };
+
+        pub const Type = struct {
+            definition: ?*const Item,
+        };
+    };
+
+    pub fn init(data: ItemData, name: []const u8) NodeItem {
+        return NodeItem{
+            .data = data,
+            .name = name,
+            .path = null, // TODO:
+
+        };
+    }
+
+    fn to_str(self: *const NodeItem, writer: Writer) void {
+        switch (self.item) {
+            _ => self.to_str(writer),
+        }
+    }
+};
+
 pub const NodeType = enum {
     abstract_type,
     arguments,

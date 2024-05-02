@@ -3,12 +3,6 @@
 set -l watch_path ( echo  $argv[1] | string split ' ' )
 set -l run_cmd $argv[2..]
 
-
-# if test -z "$watch_path"
-#     printf "\e[38;5;1mUsage: ./watch-files '<file...>' \n\e[m"
-#     exit 1
-# end
-
 for file in $watch_path
     test -z $file; and continue
 
@@ -43,7 +37,6 @@ while true
     set -l cmd_status $status
     if ! string match -q $cmd_status 0
         set_color red
-        # printf "\nExited with status "
         printf "Failed: with status $cmd_status\n"
         set_color normal
     end
