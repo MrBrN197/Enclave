@@ -18,6 +18,7 @@ pub const NodeItem = struct {
         object_item,
         type_item,
         impl_item,
+        enum_item,
     };
 
     pub const ItemData = union(ItemType) {
@@ -25,9 +26,19 @@ pub const NodeItem = struct {
         object_item: Object,
         type_item: Type,
         impl_item: Impl,
+        enum_item: Enum,
 
         pub const Impl = struct {
             procedures: ?[]const Procedure,
+        };
+
+        pub const Enum = struct {
+            procedures: ?[]const Procedure,
+            variants: []const Variant,
+
+            pub const Variant = struct {
+                name: []const u8,
+            };
         };
 
         pub const Procedure = struct {
@@ -104,9 +115,17 @@ pub const NodeItem = struct {
 
                 // self.to_str(writer); // TODO:
             },
-            else => {
+            else => |tag| {
                 const name = self.name orelse unreachable;
-                try std.fmt.format(writer, "const {s}", .{name});
+                const item_type = blk: {
+                    switch (tag) {
+                        .object_item => break :blk "struct",
+                        .enum_item => break :blk "enum",
+                        .type_item => break :blk "",
+                        else => unreachable,
+                    }
+                };
+                try std.fmt.format(writer, "const {s} = {s}", .{ name, item_type });
                 // self.to_str(writer); // TODO:
             },
         }
@@ -349,6 +368,7 @@ pub const NodeType = enum {
         if (eql(str, "match_block")) return .match_block;
         if (eql(str, "match_expression")) return .match_expression;
         if (eql(str, "match_pattern")) return .match_pattern;
+        if (eql(str, "metavariable")) return .metavariable;
         if (eql(str, "mod_item")) return .mod_item;
         if (eql(str, "mutable_specifier")) return .mutable_specifier;
         if (eql(str, "mut_pattern")) return .mut_pattern;
@@ -361,6 +381,7 @@ pub const NodeType = enum {
         if (eql(str, "parameters")) return .parameters;
         if (eql(str, "parenthesized_expression")) return .parenthesized_expression;
         if (eql(str, "pointer_type")) return .pointer_type;
+        if (eql(str, "primitive_type")) return .primitive_type;
         if (eql(str, "qualified_type")) return .qualified_type;
         if (eql(str, "range_expression")) return .range_expression;
         if (eql(str, "range_pattern")) return .range_pattern;

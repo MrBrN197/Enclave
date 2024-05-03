@@ -117,6 +117,11 @@ pub const Node = struct {
                 const item = self.extract_impl_item(parser);
                 collect.append(item) catch unreachable;
             },
+            .enum_item => {
+                const item = self.extract_enum_item(parser);
+                collect.append(item) catch unreachable;
+            },
+            .line_comment, .use_declaration => return,
 
             else => |tag| {
                 const gray_open = "\u{001b}[38;5;8m\n";
@@ -692,33 +697,52 @@ pub const Node = struct {
         }
         // out(writer, "\n", .{});
     }
-    fn extract_enum_item(self: *const @This(), parser: *const Parser) void {
-        const name_field = self.get_field("name") orelse unreachable;
+    fn extract_enum_item(self: *const @This(), parser: *const Parser) NodeItem {
+        // TODO: $visibility_modifier;
 
+        const name_field = self.get_field_unchecked("name");
         const name = parser.node_to_string(name_field.node, self.allocator);
-        _ = name; // autofix
 
-        if (self.get_field("type_parameters")) |type_parameters_field| {
-            const type_parameters = parser.node_to_string(type_parameters_field.node, self.allocator);
-            _ = type_parameters; // autofix
-            //     out(writer, "Params:\n\t{s}\n", .{type_parameters});
-        }
+        // TODO: if (get_field("type_parameters") $type_parameters;
+        // TODO: $where_clause;
 
-        if (self.get_field("parameters")) |parameters_field| {
-            const parameters = parser.node_to_string(parameters_field.node, self.allocator);
-            _ = parameters; // autofix
-            // out(writer, "Parameters:\n\t{s}\n", .{parameters});
-        }
-        if (self.get_field("return_type")) |return_type_field| {
-            const return_type = parser.node_to_string(return_type_field.node, self.allocator);
-            _ = return_type; // autofix
-            // out(
-            //     writer,
-            //     "Return_type:\n\t{s}\n",
-            //     .{return_type},
-            // );
-        }
+        const body = self.get_field_unchecked("body"); // $enum_variant_list;
+
+        const variants = body.extract_enum_variants(parser);
+
+        const item_data = NodeItem.ItemData{ .enum_item = .{
+            .procedures = null,
+            .variants = variants.items,
+        } };
+        const result = NodeItem.init(item_data, name);
+        return result;
     }
+
+    fn extract_enum_variants(self: *const @This(), parser: *const Parser) std.ArrayList(NodeItem.ItemData.Enum.Variant) {
+        const children = self.get_children_named(); // FIX:
+
+        var variants = std.ArrayList(NodeItem.ItemData.Enum.Variant).init(self.allocator); // FIX:
+
+        for (children.items) |child| {
+            // TODO: $attribute_item;
+
+            assert(child.node_type == .enum_variant);
+
+            // TODO: $?visibility_modifier
+            const name_field = child.get_field_unchecked("name"); // identifier
+            const name = parser.node_to_string(name_field.node, self.allocator);
+            // TODO: if child.get_field("body" // $field_declaration_list | $ordered_field_declaration_list
+
+            // TODO: if child.get_field("value", $_expression?
+
+            const variant = NodeItem.ItemData.Enum.Variant{
+                .name = name,
+            };
+            variants.append(variant) catch unreachable;
+        }
+        return variants;
+    }
+
     fn extract_function_signature_item(self: *const @This(), parser: *const Parser) void {
         const name_field = self.get_field("name") orelse unreachable;
 
