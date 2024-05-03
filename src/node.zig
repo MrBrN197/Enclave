@@ -569,8 +569,10 @@ pub const Node = struct {
             .pointer_type => {
                 unreachable;
             },
-            .generic_type => {
+            .generic_type => { // FIX:
                 const type_field = self.get_field_unchecked("type"); // ($_type_identifier | $_reserved_identifier | $scoped_type_identifier)
+
+                assert(type_field.node_type != .scoped_identifier); // FIX: allow
 
                 var type_kind = type_field.extract_type_ref(parser) orelse unreachable;
                 assert(type_kind == .identifier);
@@ -584,8 +586,43 @@ pub const Node = struct {
                 };
                 return type_kind;
             },
-            .scoped_type_identifier => {
-                unreachable;
+            .scoped_identifier, .scoped_type_identifier => {
+                const kind: ?TypeKind = if (self.get_field("path")) |path_field| blk: {
+                    switch (path_field.node_type) {
+                        .generic_type => {
+                            const kind = path_field.extract_type_ref(parser);
+                            break :blk kind;
+                        },
+                        .metavariable => unreachable, // $identifier
+                        .self, .super, .crate => {
+                            const text = parser.node_to_string(path_field.node, self.allocator); // FIX:
+                            return TypeKind{ .identifier = text };
+                        },
+                        .scoped_identifier => {
+                            return path_field.extract_type_ref(parser);
+                        },
+                        .identifier => {
+                            // $reserved_identifier | primitive Types
+                            // TODO: primitives types;
+                            // "union"
+                            // "default"
+                            const text = parser.node_to_string(path_field.node, self.allocator);
+                            return TypeKind{ .identifier = text };
+                        },
+                        .bracketed_type => unreachable,
+                        else => |tag| {
+                            eprintln("TODO: Scoped Type => {s}", .{@tagName(tag)});
+                            unreachable;
+                        },
+                    }
+                } else null;
+                _ = kind; // FIX:  identifier with path;
+
+                const name_field = self.get_field_unchecked("name");
+                const type_kind = name_field.extract_type_ref(parser) orelse unreachable;
+                assert(type_kind == .identifier);
+
+                return type_kind;
             },
             .tuple_type => {
                 unreachable;

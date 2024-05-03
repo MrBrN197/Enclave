@@ -177,6 +177,7 @@ pub const NodeType = enum {
     const_parameter,
     constrained_type_parameter,
     continue_expression,
+    crate,
     declaration_list,
     delim_token_tree,
     dynamic_type,
@@ -267,6 +268,7 @@ pub const NodeType = enum {
     struct_expression,
     struct_item,
     struct_pattern,
+    super,
     token_binding_pattern,
     token_repetition,
     token_repetition_pattern,
@@ -332,6 +334,7 @@ pub const NodeType = enum {
         if (eql(str, "const_parameter")) return .const_parameter;
         if (eql(str, "constrained_type_parameter")) return .constrained_type_parameter;
         if (eql(str, "continue_expression")) return .continue_expression;
+        if (eql(str, "crate")) return .crate;
         if (eql(str, "declaration_list")) return .declaration_list;
         if (eql(str, "delim_token_tree")) return .delim_token_tree;
         if (eql(str, "dynamic_type")) return .dynamic_type;
@@ -422,6 +425,7 @@ pub const NodeType = enum {
         if (eql(str, "struct_expression")) return .struct_expression;
         if (eql(str, "struct_item")) return .struct_item;
         if (eql(str, "struct_pattern")) return .struct_pattern;
+        if (eql(str, "super")) return .super;
         if (eql(str, "token_binding_pattern")) return .token_binding_pattern;
         if (eql(str, "token_repetition_pattern")) return .token_repetition_pattern;
         if (eql(str, "token_repetition")) return .token_repetition;
