@@ -69,27 +69,29 @@ pub const Node = struct {
         // FIX:
     }
 
-    pub fn extract_type_item(self: *const Node, parser: *const Parser) NodeItem {
+    pub fn extract_type_item(self: *const Node, parser: *const Parser) TypeItem {
         // TODO: $visibility_modifier
 
         const name_field = self.get_field_unchecked("name"); //  $_type_identifier
         const typename = parser.node_to_string(name_field.node, self.allocator);
         // TODO: const type_parameters_field = if (self.get_field("type_parameters")) //  $type_parameters
 
-        // TODO: const type_field = self.get_field("type"); // $_type
+        const type_field = self.get_field_unchecked("type"); // $_type
+        const type_kind = type_field.extract_type_ref(parser);
         // TODO: $where_clause,
 
-        const item_data = NodeItem.ItemData{
-            .type_item = .{
-                .name = typename,
-                .kind = null, // TODO:
-            },
+        return NodeItem.ItemData.TypeItem{
+            .name = typename,
+            .kind = type_kind,
         };
-        const result = NodeItem.init(item_data, typename);
-        return result;
     }
 
-    pub fn extract_node_items(self: *const Node, parser: *const Parser, collect: *std.ArrayList(NodeItem)) void {
+    pub fn extract_node_items(
+        self: *const Node,
+        parser: *const Parser,
+        collect: *std.ArrayList(NodeItem),
+        ctx: Parser.Context,
+    ) void {
         switch (self.node_type) {
             .source_file => {
                 var children = self.get_children_named();
@@ -97,14 +99,10 @@ pub const Node = struct {
                 defer for (children.items) |*child| child.deinit();
 
                 for (children.items) |child| {
-                    child.extract_node_items(parser, collect);
+                    child.extract_node_items(parser, collect, ctx);
                 }
             },
 
-            .type_item => {
-                const item = self.extract_type_item(parser);
-                collect.append(item) catch unreachable;
-            },
             .function_item => {
                 const item = self.extract_function_item(parser);
                 collect.append(item) catch unreachable;
@@ -134,6 +132,23 @@ pub const Node = struct {
                 eprintln(gray_open ++ "// TODO: {s}" ++ gray_close, .{@tagName(tag)});
             },
         }
+    }
+
+    const TypeItem = NodeItem.ItemData.TypeItem;
+    pub fn extract_type_items(self: *const Node, parser: *const Parser, collect: *std.ArrayList(TypeItem)) void {
+        // FIX: check valid node_type;
+        const children = self.get_children_named();
+        for (children.items) |child| {
+            switch (child.node_type) {
+                .type_item => {
+                    const item = child.extract_type_item(parser);
+                    collect.append(item) catch unreachable;
+                },
+                else => continue,
+            }
+        }
+        eprintln("TypeItems.len {}", .{collect.items.len});
+        return;
     }
 
     pub fn get_source_text(self: *const Node) []const []const u8 {
@@ -555,7 +570,19 @@ pub const Node = struct {
                 unreachable;
             },
             .generic_type => {
-                unreachable;
+                const type_field = self.get_field_unchecked("type"); // ($_type_identifier | $_reserved_identifier | $scoped_type_identifier)
+
+                var type_kind = type_field.extract_type_ref(parser) orelse unreachable;
+                assert(type_kind == .identifier);
+                const name = type_kind.identifier;
+
+                const type_args = self.get_field_unchecked("type_arguments"); // $type_arguments
+                _ = type_args; // autofix
+
+                type_kind = TypeKind{
+                    .generic = .{ .name = name },
+                };
+                return type_kind;
             },
             .scoped_type_identifier => {
                 unreachable;
@@ -593,10 +620,11 @@ pub const Node = struct {
                 // const text = parser.node_to_string(self.node, self.allocator);
                 return TypeKind{ .primitive = .none };
             },
-            else => { // _type_identifier
+            else => |tag| { // _type_identifier
+                assert(tag == .identifier or tag == .type_identifier);
+
                 const text = parser.node_to_string(self.node, self.allocator);
-                eprintln("--------- TypeIdentifier: {s}", .{text}); // FIX:
-                unreachable;
+                return TypeKind{ .identifier = text }; // FIX: copy
             },
         }
     }

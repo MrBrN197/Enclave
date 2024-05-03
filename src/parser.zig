@@ -1,23 +1,26 @@
 const c = @import("./c.zig");
 const NodeItem = @import("./node/types.zig").NodeItem;
+const TypeItem = @import("./node/types.zig").NodeItem.ItemData.TypeItem;
+const root = @import("./root.zig");
 const std = @import("std");
 const tsnode = @import("./node.zig");
 
 const assert = std.debug.assert;
+const eprintln = root.eprintln;
+const eprint = root.eprint;
 const mem = std.mem;
 const Node = tsnode.Node;
-
-const root = @import("./root.zig");
-const eprint = root.eprint;
-const eprintln = root.eprintln;
 
 pub const Parser = struct {
     lines_iter: Lines,
     parser: ?*c.TSParser,
     tree: ?*c.TSTree,
-    allocator: std.mem.Allocator,
+    allocator: mem.Allocator,
 
     const Lines = mem.SplitIterator(u8, .scalar);
+    pub const Context = struct {
+        type_items: std.ArrayList(NodeItem.ItemData.TypeItem),
+    };
 
     pub fn init(source_code: []const u8, allocator: mem.Allocator) @This() {
         const parser = c.ts_parser_new();
@@ -76,7 +79,11 @@ pub const Parser = struct {
 
         const current_node = Node.init(root_node, self.allocator);
 
-        current_node.extract_node_items(self, &result);
+        var type_items = std.ArrayList(TypeItem).init(self.allocator);
+        current_node.extract_type_items(self, &type_items);
+
+        const ctx = Context{ .type_items = type_items };
+        current_node.extract_node_items(self, &result, ctx);
 
         return result.items;
     }

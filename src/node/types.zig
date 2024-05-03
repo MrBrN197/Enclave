@@ -74,6 +74,8 @@ pub const NodeItem = struct {
         };
 
         pub const TypeKind = union(enum) {
+            generic: struct { name: []const u8 },
+            identifier: []const u8,
             no_return: void,
             primitive: enum { none }, // FIX:
             ref: struct { child: ?*const TypeKind },
