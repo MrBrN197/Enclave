@@ -14,6 +14,7 @@ const Parser = @import("./parser.zig").Parser; // TODO:
 const node_types = @import("./node/types.zig");
 const NodeType = node_types.NodeType;
 const NodeItem = node_types.NodeItem;
+const TypeKind = NodeItem.ItemData.TypeKind;
 
 const Writer = @TypeOf(std.io.getStdOut().writer());
 const Allocator = std.mem.Allocator;
@@ -231,12 +232,13 @@ pub const Node = struct {
     }
 
     fn extract_struct_item(self: *const @This(), parser: *const Parser) NodeItem {
-        // TODO: if get_field(self,"visibility_modifier") ||
+        // TODO: if self.get_field("visibility_modifier") ||
 
         assert(self.node_type == .struct_item);
 
         const id_field = self.get_field_unchecked("name"); // $.identifier,
         const id = parser.node_to_string(id_field.node, self.allocator);
+
         // if (self.get_field(self, "type_parameters")) ||  // TODO:
 
         var fields = std.ArrayList(NodeItem.ItemData.Object.Field).init(self.allocator);
@@ -246,29 +248,32 @@ pub const Node = struct {
             if (eql(body_field.sym, "field_declaration_list")) {
                 const decls = body_field.get_children_named();
                 for (decls.items) |decl| {
-                    if (decl.node_type == .field_declaration) {
-                        // $visibility_modifier?,
-                        const name_field = decl.get_field_unchecked("name"); //  $_field_identifier
-                        const name = parser.node_to_string(name_field.node, self.allocator);
-                        const type_field = decl.get_field_unchecked("type"); //  $_type
-                        _ = type_field; // autofix
-                        // TODO: extract_type_ref(type_field);
+                    switch (decl.node_type) {
+                        .field_declaration => {
+                            // $visibility_modifier?,
+                            const name_field = decl.get_field_unchecked("name"); //  $_field_identifier
+                            const name = parser.node_to_string(name_field.node, self.allocator);
+                            const type_field = decl.get_field_unchecked("type"); //  $_type
+                            const type_kind = type_field.extract_type_ref(parser);
+                            if (type_kind) |ty_kind| {
+                                const field = NodeItem.ItemData.Object.Field{
+                                    .name = name,
+                                    .type_kind = ty_kind,
+                                };
 
-                        const field = NodeItem.ItemData.Object.Field{
-                            .name = name,
-                            .type_ref = null,
-                        };
-                        fields.append(field) catch unreachable;
-                    } else if (decl.node_type == .attribute_item) {
-                        unreachable;
-                    } else unreachable;
+                                fields.append(field) catch unreachable;
+                            } else unreachable;
+                        },
+                        .attribute_item => continue, // FIX:
+                        else => unreachable,
+                    }
                 }
             } else if (eql(body_field.sym, "ordered_field_declaration_list")) {
                 unreachable; // TODO:
             } else unreachable;
         }
 
-        const data = NodeItem.ItemData{
+        const object = NodeItem.ItemData{
             .object_item = .{
                 .fields = fields.items,
                 .procedures = null, // TODO:
@@ -276,7 +281,7 @@ pub const Node = struct {
         };
 
         assert(!eql(id, ""));
-        const result = NodeItem.init(data, id);
+        const result = NodeItem.init(object, id);
         return result;
     }
 
@@ -554,8 +559,6 @@ pub const Node = struct {
     }
 
     fn extract_type_ref(self: *const @This(), parser: *const Parser) ?NodeItem.ItemData.TypeKind {
-        const TypeKind = NodeItem.ItemData.TypeKind;
-
         switch (self.node_type) {
             .abstract_type => {
                 unreachable;

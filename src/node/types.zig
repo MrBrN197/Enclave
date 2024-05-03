@@ -78,7 +78,7 @@ pub const NodeItem = struct {
         };
 
         pub const Object = struct {
-            pub const Field = struct { name: []const u8, type_ref: ?*const TypeItem };
+            pub const Field = struct { name: []const u8, type_kind: TypeKind };
             fields: []Field,
             procedures: ?[]const Procedure,
         };
