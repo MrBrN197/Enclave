@@ -121,6 +121,10 @@ pub const Node = struct {
                 const item = self.extract_enum_item(parser);
                 collect.append(item) catch unreachable;
             },
+            .mod_item => {
+                const item = self.extract_mod_item(parser);
+                collect.append(item) catch unreachable;
+            },
             .line_comment, .use_declaration => return,
 
             else => |tag| {
@@ -421,36 +425,22 @@ pub const Node = struct {
             // );
         }
     }
-    fn extract_mod_item(self: *const @This(), parser: *const Parser) void {
-        const name_field = self.get_field("name") orelse unreachable;
+    fn extract_mod_item(self: *const @This(), parser: *const Parser) NodeItem {
+        // TODO: $visibility_modifier
 
+        const name_field = self.get_field_unchecked("name");
         const name = parser.node_to_string(name_field.node, self.allocator);
-        _ = name; // autofix
 
-        if (self.get_field("type_parameters")) |type_parameters_field| {
-            const type_parameters = parser.node_to_string(type_parameters_field.node, self.allocator);
-            _ = type_parameters; // autofix
-            //     out(writer, "Params:\n\t{s}\n", .{type_parameters});
+        if (self.get_field("body")) |_| { // $declaration_list);
+            unreachable;
         }
 
-        if (self.get_field("parameters")) |parameters_field| {
-            const parameters = parser.node_to_string(parameters_field.node, self.allocator);
-            _ = parameters; // autofix
-            // out(
-            //     writer,
-            //     "Parameters:\n\t{s}\n",
-            //     .{parameters},
-            // );
-        }
-        if (self.get_field("return_type")) |return_type_field| {
-            const return_type = parser.node_to_string(return_type_field.node, self.allocator);
-            _ = return_type; // autofix
-            // out(
-            //     writer,
-            //     "Return_type:\n\t{s}\n",
-            //     .{return_type},
-            // );
-        }
+        const item_data = NodeItem.ItemData{
+            .module_item = .{ .content = null }, // TODO:
+        };
+
+        const result = NodeItem.init(item_data, name);
+        return result;
     }
     fn extract_foreign_mod_item(self: *const @This(), parser: *const Parser) void {
         const name_field = self.get_field("name") orelse unreachable;

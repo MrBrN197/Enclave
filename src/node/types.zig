@@ -19,6 +19,7 @@ pub const NodeItem = struct {
         type_item,
         impl_item,
         enum_item,
+        module_item,
     };
 
     pub const ItemData = union(ItemType) {
@@ -27,9 +28,14 @@ pub const NodeItem = struct {
         type_item: Type,
         impl_item: Impl,
         enum_item: Enum,
+        module_item: Module,
 
         pub const Impl = struct {
             procedures: ?[]const Procedure,
+        };
+
+        pub const Module = struct {
+            content: ?void,
         };
 
         pub const Enum = struct {
