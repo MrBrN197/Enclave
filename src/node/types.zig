@@ -60,8 +60,17 @@ pub const NodeItem = struct {
 
                 pub fn format(self: Self, comptime _: []const u8, _: std.fmt.FormatOptions, writer: Writer) !void {
                     if (self.typekind) |ty| {
-                        return std.fmt.format(writer, "{s}: {}", .{ self.name, ty });
-                    } else {
+                        switch (ty) {
+                            .tuple => |tuple_types| {
+                                for (tuple_types.items, 0) |tuple_type, idx| {
+                                    try std.fmt.format(writer, "{s}: {{{s}}}", .{(tuple_type)});
+                                    if (idx != (tuple_types.items.len - 1)) try std.fmt.format(writer, " | ", .{});
+                                }
+                            },
+                            // FIX: unreachable
+                            else => return std.fmt.format(writer, "{s}: {{{s}}}", .{ self.name, @tagName(ty) }), // FIX:
+                        }
+                    } else { // FIX: unreachable
                         return std.fmt.format(writer, "{s}", .{self.name});
                     }
                 }
@@ -80,15 +89,27 @@ pub const NodeItem = struct {
             no_return: void,
             primitive: enum { none }, // FIX:
             ref: struct { child: ?*const TypeKind },
+            tuple: std.ArrayList(TypeKind),
 
             const Self = @This();
             pub fn format(
-                _: Self,
+                self: Self,
                 comptime _: []const u8,
                 _: std.fmt.FormatOptions,
                 writer: anytype,
             ) !void {
-                return std.fmt.format(writer, "{{{{type}}}}", .{});
+                switch (self) {
+                    .tuple => |tuple_items| {
+                        assert(tuple_items.items.len > 0);
+                        try std.fmt.format(writer, "(", .{});
+                        for (tuple_items.items, 0..) |ty_kind, idx| {
+                            try std.fmt.format(writer, "{s}", .{ty_kind});
+                            if (idx != (tuple_items.items.len - 1)) try std.fmt.format(writer, " | ", .{});
+                        }
+                        try std.fmt.format(writer, ")", .{});
+                    },
+                    else => return std.fmt.format(writer, "{{{{ {s} }}}}", .{@tagName(self)}),
+                }
             }
         };
 
@@ -138,7 +159,7 @@ pub const NodeItem = struct {
                 try std.fmt.format(writer, "\n", .{});
             },
             .impl_item => {
-                // TODO:
+                try std.fmt.format(writer, "// TODO: impl_item\n", .{});
             },
             .procedure_item => |data| {
                 const name = self.name orelse unreachable;
@@ -176,7 +197,6 @@ pub const NodeItem = struct {
                     }
                 };
                 try std.fmt.format(writer, "const {s} = {s}", .{ name, item_type });
-                // self.to_str(writer); // TODO:
                 try std.fmt.format(writer, "\n", .{});
             },
         }

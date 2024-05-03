@@ -629,7 +629,15 @@ pub const Node = struct {
                 return type_kind;
             },
             .tuple_type => {
-                unreachable;
+                var tuples_types = std.ArrayList(TypeKind).init(self.allocator); // FIX:
+
+                const children = self.get_children_named();
+                for (children.items) |child| {
+                    const _type = child.extract_type_ref(parser);
+                    if (_type) |t| (tuples_types.append(t) catch unreachable) else unreachable;
+                }
+
+                return TypeKind{ .tuple = tuples_types };
             },
             .unit_type => {
                 return null;
@@ -1271,15 +1279,6 @@ pub const Node = struct {
         // out(writer, "{s}", .{joined});
         // out(writer, ".", .{});
         // out(writer, "{s}", .{name});
-    }
-    fn extract_tuple_type(self: *const @This(), parser: *const Parser) void {
-        const types = get_children_named(self);
-        // out(writer, "struct {{", .{});
-        for (types.items) |ty| {
-            ty.write_to(parser);
-            //     out(writer, ",", .{});
-        }
-        // out(writer, "}}", .{});
     }
 
     fn extract_unit_type(_: *const @This(), _: *const Parser) void {
