@@ -49,6 +49,8 @@ pub const Node = struct {
     row_end: struct { usize, usize },
     allocator: Allocator,
 
+    const Self = @This();
+
     pub fn init(node: c.TSNode, allocator: std.mem.Allocator) @This() {
         const point_start = c.ts_node_start_point(node);
         const point_end = c.ts_node_end_point(node);
@@ -91,16 +93,15 @@ pub const Node = struct {
         self: *const Node,
         parser: *const Parser,
         collect: *std.ArrayList(NodeItem),
-        ctx: Parser.Context,
     ) void {
         switch (self.node_type) {
-            .source_file => {
+            .declaration_list, .source_file => {
                 var children = self.get_children_named();
                 defer children.clearAndFree();
                 defer for (children.items) |*child| child.deinit();
 
                 for (children.items) |child| {
-                    child.extract_node_items(parser, collect, ctx);
+                    child.extract_node_items(parser, collect);
                 }
             },
 
@@ -138,20 +139,20 @@ pub const Node = struct {
     }
 
     const TypeItem = NodeItem.ItemData.TypeItem;
-    pub fn extract_type_items(self: *const Node, parser: *const Parser, collect: *std.ArrayList(TypeItem)) void {
+    pub fn extract_type_items(self: *const Self, parser: *const Parser) std.ArrayList(TypeItem) {
         // FIX: check valid node_type;
+        var type_items = std.ArrayList(TypeItem).init(parser.allocator); // FIX:
         const children = self.get_children_named();
         for (children.items) |child| {
             switch (child.node_type) {
                 .type_item => {
                     const item = child.extract_type_item(parser);
-                    collect.append(item) catch unreachable;
+                    type_items.append(item) catch unreachable;
                 },
                 else => continue,
             }
         }
-        eprintln("TypeItems.len {}", .{collect.items.len});
-        return;
+        return type_items;
     }
 
     pub fn get_source_text(self: *const Node) []const []const u8 {
@@ -279,39 +280,38 @@ pub const Node = struct {
         return result;
     }
 
-    fn extract_body(self: *const @This(), parser: *const Parser) void {
-        const node_name = get_type(self);
+    fn extract_body(self: *const Self, parser: *const Parser) std.ArrayList(NodeItem) {
+        // const type_items = self.extract_type_items(parser);
 
-        if (eql("field_declaration_list", node_name)) {
-            const children = get_children_named(self);
-            //     out(writer, " = struct {{\n", .{});
+        var node_items = std.ArrayList(NodeItem).init(parser.allocator); // TODO:
+        self.extract_node_items(parser, &node_items);
 
-            for (children.items) |field_decl| {
-                const field_name = get_type(field_decl);
-                if (eql("field_declaration", field_name)) {
-                    const name_field = self.get_field("name") orelse unreachable;
-                    const type_field = self.get_field("type") orelse unreachable;
-                    const name = parser.node_to_string(name_field.node, self.allocator);
-                    _ = name; // autofix
-                    const _type = parser.node_to_string(type_field.node, self.allocator);
-                    _ = _type; // autofix
-                    //             out(writer, "\t{s}: {s},\n", .{ name[0], _type[0] });
-                }
-            }
-            //     out(writer, "}};", .{});
-        } else {
-            //     out(writer, " = ", .{});
-            assert(eql("ordered_field_declaration_list", node_name));
-            const _type_field = self.get_field("type") orelse unreachable;
-            const _type = parser.node_to_string(_type_field.node, self.allocator);
+        return node_items;
 
-            // TODO: convert type;
-            for (_type) |str| {
-                _ = str; // autofix
-                //         out(writer, "{s}", .{str});
-            }
-            //     out(writer, ";", .{});
-        }
+        //     if (eql("field_declaration_list", node_name)) {
+        //         const children = get_children_named(self);
+
+        //         for (children.items) |field_decl| {
+        //             const field_name = get_type(field_decl);
+        //             if (eql("field_declaration", field_name)) {
+        //                 const name_field = self.get_field("name") orelse unreachable;
+        //                 const type_field = self.get_field("type") orelse unreachable;
+        //                 const name = parser.node_to_string(name_field.node, self.allocator);
+        //                 _ = name; // autofix
+        //                 const _type = parser.node_to_string(type_field.node, self.allocator);
+        //                 _ = _type; // autofix
+        //             }
+        //         }
+        //     } else {
+        //         assert(eql("ordered_field_declaration_list", node_name));
+        //         const _type_field = self.get_field("type") orelse unreachable;
+        //         const _type = parser.node_to_string(_type_field.node, self.allocator);
+
+        //         // TODO: convert type;
+        //         for (_type) |str| {
+        //             _ = str; // autofix
+        //         }
+        //     }
     }
 
     fn extract_const_item(self: *const @This(), parser: *const Parser) void {
@@ -450,15 +450,19 @@ pub const Node = struct {
         const name_field = self.get_field_unchecked("name");
         const name = parser.node_to_string(name_field.node, self.allocator);
 
-        if (self.get_field("body")) |_| { // $declaration_list);
-            unreachable;
-        }
+        const node_items = if (self.get_field("body")) |body_field| blk: { // $declaration_list);
+            break :blk body_field.extract_body(parser);
+        } else null;
 
-        const item_data = NodeItem.ItemData{
-            .module_item = .{ .content = null }, // TODO:
+        // const item_data = NodeItem.ItemData{
+        //     .module_item = module,
+        // };
+
+        const module = NodeItem.ItemData{
+            .module_item = .{ .contents = node_items },
         };
+        const result = NodeItem.init(module, name);
 
-        const result = NodeItem.init(item_data, name);
         return result;
     }
     fn extract_foreign_mod_item(self: *const @This(), parser: *const Parser) void {

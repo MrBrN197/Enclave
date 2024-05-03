@@ -9,6 +9,7 @@ const assert = std.debug.assert;
 const is_empty = @import("../root.zig").is_empty;
 
 pub const NodeItem = struct {
+    // TODO: contents: {}
     name: ?[]const u8,
     path: ?[]const u8,
     data: ItemData,
@@ -35,7 +36,7 @@ pub const NodeItem = struct {
         };
 
         pub const Module = struct {
-            content: ?void,
+            contents: ?std.ArrayList(NodeItem), // TODO:
         };
 
         pub const Enum = struct {
@@ -120,8 +121,21 @@ pub const NodeItem = struct {
 
     pub fn serialize(self: *const NodeItem, writer: Writer) !void {
         switch (self.data) {
-            .module_item => |_| {
-                // TODO:
+            .module_item => |mod| {
+                assert(self.name != null);
+                const name = self.name.?;
+
+                if (mod.contents) |contents| {
+                    try std.fmt.format(writer, "const {s} = module {{\n", .{name});
+                    for (contents.items) |item| {
+                        try item.serialize(writer);
+                    }
+                    try std.fmt.format(writer, "\n}};", .{});
+                } else {
+                    try std.fmt.format(writer, "mod {s};", .{name});
+                }
+
+                try std.fmt.format(writer, "\n", .{});
             },
             .impl_item => {
                 // TODO:

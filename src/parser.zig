@@ -18,9 +18,6 @@ pub const Parser = struct {
     allocator: mem.Allocator,
 
     const Lines = mem.SplitIterator(u8, .scalar);
-    pub const Context = struct {
-        type_items: std.ArrayList(NodeItem.ItemData.TypeItem),
-    };
 
     pub fn init(source_code: []const u8, allocator: mem.Allocator) @This() {
         const parser = c.ts_parser_new();
@@ -69,7 +66,8 @@ pub const Parser = struct {
         // current_node.write_to(self, writer);
     }
 
-    pub fn parse(self: *const Parser) [](NodeItem) {
+    const Self = @This();
+    pub fn parse(self: *const Self) [](NodeItem) {
         var lines = self.lines_iter;
         lines.reset(); //TODO:
 
@@ -79,11 +77,10 @@ pub const Parser = struct {
 
         const current_node = Node.init(root_node, self.allocator);
 
-        var type_items = std.ArrayList(TypeItem).init(self.allocator);
-        current_node.extract_type_items(self, &type_items);
+        const type_items = current_node.extract_type_items(self);
+        _ = type_items; // autofix
 
-        const ctx = Context{ .type_items = type_items };
-        current_node.extract_node_items(self, &result, ctx);
+        current_node.extract_node_items(self, &result);
 
         return result.items;
     }
