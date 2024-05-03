@@ -49,7 +49,7 @@ pub const NodeItem = struct {
 
         pub const Procedure = struct {
             params: []const Param,
-            return_type: ?*const TypeItem,
+            return_type: ?TypeKind,
 
             pub const Param = struct {
                 name: []const u8,
@@ -140,12 +140,13 @@ pub const NodeItem = struct {
                 try std.fmt.format(writer, ")", .{});
 
                 if (data.return_type) |return_type| {
-                    try std.fmt.format(writer, "{s}", .{return_type.name});
+                    try std.fmt.format(writer, "{s}", .{return_type});
                 } else {
                     try std.fmt.format(writer, "void", .{});
                 }
 
                 // self.to_str(writer); // TODO:
+                try std.fmt.format(writer, "\n", .{});
             },
 
             else => |tag| {
@@ -162,9 +163,9 @@ pub const NodeItem = struct {
                 };
                 try std.fmt.format(writer, "const {s} = {s}", .{ name, item_type });
                 // self.to_str(writer); // TODO:
+                try std.fmt.format(writer, "\n", .{});
             },
         }
-        try std.fmt.format(writer, "\n", .{});
     }
 };
 

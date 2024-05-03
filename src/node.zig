@@ -7,6 +7,7 @@ const c = @import("./c.zig");
 const eprintln = @import("./root.zig").eprintln;
 const eprint = @import("./root.zig").eprint;
 const eql = @import("./root.zig").eql;
+const is_empty = @import("./root.zig").is_empty;
 
 const Parser = @import("./parser.zig").Parser; // TODO:
 
@@ -683,24 +684,20 @@ pub const Node = struct {
         const return_type_kind = blk: {
             if (self.get_field("return_type")) |return_type| {
                 const type_kind = return_type.extract_type_ref(parser);
+                if (type_kind) |kind| {
+                    if (kind == .identifier) assert(!is_empty(kind.identifier));
+                }
 
                 break :blk type_kind;
             } else break :blk null;
         };
-
-        const type_item = parser.allocator.create(NodeItem.ItemData.TypeItem) catch unreachable;
-        type_item.* = NodeItem.ItemData.TypeItem{
-            .name = "", // TODO:
-            .kind = return_type_kind,
-        };
-        // const type_item = parser.add_type_item(type_item); // TODO:
 
         // TODO: field('body') //  $.block;
 
         const item_data = NodeItem.ItemData{
             .procedure_item = .{
                 .params = params.items,
-                .return_type = type_item,
+                .return_type = return_type_kind,
             },
         };
 

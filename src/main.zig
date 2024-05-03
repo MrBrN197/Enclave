@@ -64,7 +64,5 @@ pub fn convert_file(filepath: []const u8) !void {
 
     for (items) |item| item.serialize(writer) catch unreachable;
 
-    eprintln("Items Len: {}", .{items.len});
-
     try wrapper.deinit();
 }
