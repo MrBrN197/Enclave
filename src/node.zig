@@ -103,6 +103,7 @@ pub const Node = struct {
                 }
             },
 
+            .type_item => return,
             .function_item => {
                 const item = self.extract_function_item(parser);
                 collect.append(item) catch unreachable;
@@ -123,6 +124,7 @@ pub const Node = struct {
                 const item = self.extract_mod_item(parser);
                 collect.append(item) catch unreachable;
             },
+
             .extern_crate_declaration, .attribute_item => return, // TODO
             .line_comment, .use_declaration => return,
 
@@ -610,10 +612,7 @@ pub const Node = struct {
                             return TypeKind{ .identifier = text };
                         },
                         .bracketed_type => unreachable,
-                        else => |tag| {
-                            eprintln("TODO: Scoped Type => {s}", .{@tagName(tag)});
-                            unreachable;
-                        },
+                        else => unreachable,
                     }
                 } else null;
                 _ = kind; // FIX:  identifier with path;
@@ -646,7 +645,8 @@ pub const Node = struct {
                 unreachable;
             },
             .bounded_type => {
-                unreachable;
+                std.log.debug("bounded_type ignored", .{});
+                return null;
             },
             .removed_trait_bound => {
                 unreachable;

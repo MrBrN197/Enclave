@@ -79,6 +79,16 @@ pub const NodeItem = struct {
             no_return: void,
             primitive: enum { none }, // FIX:
             ref: struct { child: ?*const TypeKind },
+
+            const Self = @This();
+            pub fn format(
+                _: Self,
+                comptime _: []const u8,
+                _: std.fmt.FormatOptions,
+                writer: anytype,
+            ) !void {
+                return std.fmt.format(writer, "{{{{type}}}}", .{});
+            }
         };
 
         pub const TypeItem = struct {
@@ -86,7 +96,12 @@ pub const NodeItem = struct {
             kind: ?TypeKind, // TODO:
 
             const Self = @This();
-            pub fn format(self: Self, comptime _: []const u8, _: std.fmt.FormatOptions, writer: Writer) !void {
+            pub fn format(
+                self: Self,
+                comptime _: []const u8,
+                _: std.fmt.FormatOptions,
+                writer: Writer,
+            ) !void {
                 return std.fmt.format(writer, "{s}", .{self.name});
             }
         };
@@ -105,6 +120,9 @@ pub const NodeItem = struct {
 
     pub fn serialize(self: *const NodeItem, writer: Writer) !void {
         switch (self.data) {
+            .module_item => |_| {
+                // TODO:
+            },
             .impl_item => {
                 // TODO:
             },
@@ -129,14 +147,17 @@ pub const NodeItem = struct {
 
                 // self.to_str(writer); // TODO:
             },
+
             else => |tag| {
                 const name = self.name orelse unreachable;
                 const item_type = blk: {
                     switch (tag) {
-                        .object_item => break :blk "struct",
-                        .enum_item => break :blk "enum",
-                        .type_item => break :blk "",
-                        else => unreachable,
+                        ItemData.object_item, ItemData.module_item => break :blk "struct",
+                        ItemData.enum_item => break :blk "enum",
+                        else => {
+                            eprintln("unable to serialize '{s}'", .{@tagName(tag)});
+                            unreachable;
+                        },
                     }
                 };
                 try std.fmt.format(writer, "const {s} = {s}", .{ name, item_type });
