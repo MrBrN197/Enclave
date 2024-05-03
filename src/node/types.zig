@@ -25,7 +25,7 @@ pub const NodeItem = struct {
     pub const ItemData = union(ItemType) {
         procedure_item: Procedure,
         object_item: Object,
-        type_item: Type,
+        type_item: TypeItem,
         impl_item: Impl,
         enum_item: Enum,
         module_item: Module,
@@ -49,16 +49,16 @@ pub const NodeItem = struct {
 
         pub const Procedure = struct {
             params: []const Param,
-            return_type: ?Type,
+            return_type: ?*const TypeItem,
 
             pub const Param = struct {
                 name: []const u8,
-                typename: ?Type,
+                typekind: ?TypeKind,
 
                 const Self = @This();
 
                 pub fn format(self: Self, comptime _: []const u8, _: std.fmt.FormatOptions, writer: Writer) !void {
-                    if (self.typename) |ty| {
+                    if (self.typekind) |ty| {
                         return std.fmt.format(writer, "{s}: {}", .{ self.name, ty });
                     } else {
                         return std.fmt.format(writer, "{s}", .{self.name});
@@ -68,14 +68,20 @@ pub const NodeItem = struct {
         };
 
         pub const Object = struct {
-            pub const Field = struct { name: []const u8, type_ref: ?*const Type };
+            pub const Field = struct { name: []const u8, type_ref: ?*const TypeItem };
             fields: []Field,
             procedures: ?[]const Procedure,
         };
 
-        pub const Type = struct {
+        pub const TypeKind = union(enum) {
+            no_return: void,
+            primitive: enum { none }, // FIX:
+            ref: struct { child: ?*const TypeKind },
+        };
+
+        pub const TypeItem = struct {
             name: []const u8,
-            definition: ?*const ItemType,
+            kind: ?TypeKind, // TODO:
 
             const Self = @This();
             pub fn format(self: Self, comptime _: []const u8, _: std.fmt.FormatOptions, writer: Writer) !void {
@@ -249,6 +255,7 @@ pub const NodeType = enum {
     scoped_type_identifier,
     scoped_type_identifier_in_expression_position,
     scoped_use_list,
+    self,
     self_parameter,
     shorthand_field_initializer,
     slice_pattern,
@@ -404,6 +411,7 @@ pub const NodeType = enum {
         if (eql(str, "scoped_type_identifier")) return .scoped_type_identifier;
         if (eql(str, "scoped_use_list")) return .scoped_use_list;
         if (eql(str, "self_parameter")) return .self_parameter;
+        if (eql(str, "self")) return .self;
         if (eql(str, "shorthand_field_initializer")) return .shorthand_field_initializer;
         if (eql(str, "slice_pattern")) return .slice_pattern;
         if (eql(str, "source_file")) return .source_file;

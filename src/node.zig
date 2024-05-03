@@ -82,7 +82,7 @@ pub const Node = struct {
         const item_data = NodeItem.ItemData{
             .type_item = .{
                 .name = typename,
-                .definition = null, // TODO:
+                .kind = null, // TODO:
             },
         };
         const result = NodeItem.init(item_data, typename);
@@ -125,6 +125,7 @@ pub const Node = struct {
                 const item = self.extract_mod_item(parser);
                 collect.append(item) catch unreachable;
             },
+            .extern_crate_declaration, .attribute_item => return, // TODO
             .line_comment, .use_declaration => return,
 
             else => |tag| {
@@ -530,72 +531,74 @@ pub const Node = struct {
         // out(writer, "\n", .{});
     }
 
-    fn extract_type_ref(self: *const @This(), parser: *const Parser) ?NodeItem.ItemData.Type {
-        const name = blk: {
-            switch (self.node_type) {
-                .abstract_type => {
-                    unreachable;
-                },
-                .reference_type => {
-                    unreachable;
-                },
-                .metavariable => {
-                    unreachable;
-                },
-                .pointer_type => {
-                    unreachable;
-                },
-                .generic_type => {
-                    unreachable;
-                },
-                .scoped_type_identifier => {
-                    unreachable;
-                },
-                .tuple_type => {
-                    unreachable;
-                },
-                .unit_type => {
-                    return null;
-                },
-                .array_type => {
-                    unreachable;
-                },
-                .function_type => {
-                    unreachable;
-                },
-                .macro_invocation => {
-                    unreachable;
-                },
-                .never_type => {
-                    break :blk "noreturn";
-                },
-                .dynamic_type => {
-                    unreachable;
-                },
-                .bounded_type => {
-                    unreachable;
-                },
-                .removed_trait_bound => {
-                    unreachable;
-                },
-                .primitive_type => {
-                    // TODO: test
+    fn extract_type_ref(self: *const @This(), parser: *const Parser) ?NodeItem.ItemData.TypeKind {
+        const TypeKind = NodeItem.ItemData.TypeKind;
 
-                    const text = parser.node_to_string(self.node, self.allocator);
-                    break :blk text;
-                },
-                else => { // _type_identifier
-                    const text = parser.node_to_string(self.node, self.allocator);
-                    break :blk text;
-                },
-            }
-        };
+        switch (self.node_type) {
+            .abstract_type => {
+                unreachable;
+            },
+            .reference_type => {
+                // TODO: $lifetime,
+                // TODO: $mutable_specifier,
+                const type_field = self.get_field_unchecked("type");
+                const child_type = type_field.extract_type_ref(parser);
+                _ = child_type; // autofix
+                return TypeKind{
+                    .ref = .{ .child = null }, // FIX: parser.get_type(child_type)
+                };
+            },
+            .metavariable => {
+                unreachable;
+            },
+            .pointer_type => {
+                unreachable;
+            },
+            .generic_type => {
+                unreachable;
+            },
+            .scoped_type_identifier => {
+                unreachable;
+            },
+            .tuple_type => {
+                unreachable;
+            },
+            .unit_type => {
+                return null;
+            },
+            .array_type => {
+                unreachable;
+            },
+            .function_type => {
+                unreachable;
+            },
+            .macro_invocation => {
+                unreachable;
+            },
+            .never_type => {
+                return .no_return;
+            },
+            .dynamic_type => {
+                unreachable;
+            },
+            .bounded_type => {
+                unreachable;
+            },
+            .removed_trait_bound => {
+                unreachable;
+            },
+            .primitive_type => {
+                // FIX: test
 
-        const result = NodeItem.ItemData.Type{
-            .name = name,
-            .definition = null, // TODO:
-        };
-        return result;
+                // const text = parser.node_to_string(self.node, self.allocator);
+                return TypeKind{ .primitive = .none };
+            },
+            else => { // _type_identifier
+                const text = parser.node_to_string(self.node, self.allocator);
+                eprintln("--------- TypeIdentifier: {s}", .{text}); // FIX:
+                unreachable;
+            },
+        }
     }
 
     fn extract_function_item(self: *const @This(), parser: *const Parser) NodeItem {
@@ -612,19 +615,27 @@ pub const Node = struct {
 
         // TODO: get_field("where_clause"),
 
-        const return_type = blk: {
+        const return_type_kind = blk: {
             if (self.get_field("return_type")) |return_type| {
-                const _type = return_type.extract_type_ref(parser);
-                break :blk _type;
+                const type_kind = return_type.extract_type_ref(parser);
+
+                break :blk type_kind;
             } else break :blk null;
         };
+
+        const type_item = parser.allocator.create(NodeItem.ItemData.TypeItem) catch unreachable;
+        type_item.* = NodeItem.ItemData.TypeItem{
+            .name = "", // TODO:
+            .kind = return_type_kind,
+        };
+        // const type_item = parser.add_type_item(type_item); // TODO:
 
         // TODO: field('body') //  $.block;
 
         const item_data = NodeItem.ItemData{
             .procedure_item = .{
                 .params = params.items,
-                .return_type = return_type,
+                .return_type = type_item,
             },
         };
 
@@ -644,31 +655,79 @@ pub const Node = struct {
                 unreachable;
             }
 
-            const name_type = blk: {
+            const NameType = struct { pname: []const u8, ptype: ?NodeItem.ItemData.TypeKind };
+            const name_type: NameType = blk: {
                 if (child.node_type == .parameter) {
-                    unreachable;
+
+                    // TODO: $mutable_specifier,
+                    const pattern_field = child.get_field_unchecked("pattern"); // ( $_pattern | $self )
+
+                    const name = blk_name: {
+                        if (pattern_field.node_type == .self) {
+                            break :blk_name "self"; // TODO EnumLiteral
+                        } else {
+                            const name = pattern_field.extract_pattern(parser);
+                            break :blk_name name;
+                        }
+                    };
+
+                    const type_field = child.get_field_unchecked("type"); //  $_type
+                    const typename = type_field.extract_type_ref(parser);
+                    break :blk .{ .pname = name, .ptype = typename };
                 } else if (child.node_type == .self_parameter) {
                     unreachable;
                 } else if (child.node_type == .variadic_parameter) {
                     unreachable;
                 } else { // _type
                     const text = parser.node_to_string(child.node, self.allocator);
-                    if (eql(text, "_")) break :blk .{ .name = text, .type = null };
+                    if (eql(text, "_")) break :blk .{ .pname = text, .ptype = null };
                     // TODO: return extract_type()
                     unreachable;
                 }
             };
 
-            const name = name_type.name;
-            const typename = name_type.type;
+            const param_name = name_type.pname;
+            const param_kind = name_type.ptype;
 
             result.append(NodeItem.ItemData.Procedure.Param{
-                .name = name,
-                .typename = typename,
+                .name = param_name,
+                .typekind = param_kind,
             }) catch unreachable; // FIX:
         }
         return result;
     }
+
+    fn extract_pattern(self: *const Node, parser: *const Parser) []const u8 {
+        switch (self.node_type) {
+            .identifier => {
+                const source = parser.node_to_string(self.node, self.allocator);
+                return source;
+            },
+            // $._literal_pattern,
+            // $.identifier,
+            // $.scoped_identifier,
+            // $.tuple_pattern,
+            // $.tuple_struct_pattern,
+            // $.struct_pattern,
+            // $._reserved_identifier,
+            // $.ref_pattern,
+            // $.slice_pattern,
+            // $.captured_pattern,
+            // $.reference_pattern,
+            // $.remaining_field_pattern,
+            // $.mut_pattern,
+            // $.range_pattern,
+            // $.or_pattern,
+            // $.const_block,
+            // $.macro_invocation,
+            // '_',
+            else => {
+                eprintln("NodeType: {s}", .{@tagName(self.node_type)});
+                unreachable;
+            },
+        }
+    }
+
     fn extract_call_expression(self: *const @This(), parser: *const Parser) void { //TODO: writer
 
         const function = self.get_field("function") orelse unreachable;
