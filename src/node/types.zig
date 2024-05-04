@@ -23,16 +23,7 @@ pub const NodeItem = struct {
     path: ?[]const u8,
     data: ItemData,
 
-    pub const ItemType = enum {
-        procedure_item,
-        object_item,
-        type_item,
-        impl_item,
-        enum_item,
-        module_item,
-    };
-
-    pub const ItemData = union(ItemType) {
+    pub const ItemData = union(enum) {
         procedure_item: Procedure,
         object_item: Object,
         type_item: TypeItem,
