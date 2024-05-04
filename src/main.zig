@@ -16,7 +16,7 @@ var gpa_allocator = std.heap.GeneralPurposeAllocator(.{
 }){};
 const gpa = gpa_allocator.allocator();
 
-pub const std_options = std.Options{ .log_level = .debug };
+pub const std_options = std.Options{ .log_level = .info };
 
 pub fn main() void {
     var argv = std.process.args();
@@ -24,8 +24,7 @@ pub fn main() void {
 
     var count: usize = 0;
     while (argv.next()) |filepath| {
-        count += 1;
-        eprintln("=" ** 20 ++ "'{s}'" ++ "=" ** 20, .{filepath});
+        eprintln("=" ** 30 ++ "'{s}'" ++ "=" ** 30, .{filepath});
         convert_file(filepath) catch |e| {
             switch (e) {
                 error.FileNotFound => eprintln("File Path Not Found: {s}", .{filepath}),
@@ -37,13 +36,16 @@ pub fn main() void {
                     std.process.exit(@truncate(@intFromError(e))); // FIX:
                 },
             }
+            continue;
         };
+        count += 1;
     }
 
     if (count == 0) {
         eprintln("error: filepath required", .{});
         std.process.exit(1);
     }
+    std.log.debug("processed {} files", .{count});
 }
 
 pub fn convert_file(filepath: []const u8) !void {

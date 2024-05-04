@@ -8,16 +8,20 @@ const assert = std.debug.assert;
 
 const is_empty = @import("../root.zig").is_empty;
 
-pub const IdentifierKind = union {
-    named: []const u8,
+pub const IdentifierKind = union(enum) {
+    plain: []const u8,
     matched: Pattern,
+    /// FIX: '_'
+    discarded,
 
     pub const Pattern = struct {
-        kind: NodeItem.ItemData.TypeKind,
+        kind: void,
     };
 };
 
 pub const NodeItem = struct {
+    // TODO: visibility,
+
     // TODO: contents: {}
     name: ?[]const u8,
     path: ?[]const u8,
@@ -30,6 +34,13 @@ pub const NodeItem = struct {
         impl_item: Impl,
         enum_item: Enum,
         module_item: Module,
+        const_item: Constant,
+
+        pub const Constant = struct {
+            name: IdentifierKind,
+            value_expr: ?[]const u8,
+            type_kind: TypeKind,
+        };
 
         pub const Impl = struct {
             procedures: ?[]const Procedure,
@@ -60,7 +71,7 @@ pub const NodeItem = struct {
 
                 pub fn format(self: Self, comptime _: []const u8, _: std.fmt.FormatOptions, writer: Writer) !void {
                     _ = self; // autofix
-                    _ = writer; // autofix
+
                     // FIX:
                     // if (self.typekind) |ty| {
                     //     switch (ty) {
@@ -76,23 +87,34 @@ pub const NodeItem = struct {
                     // } else { // FIX: unreachable
                     //     return std.fmt.format(writer, "{s}", .{self.name});
                     // }
+                    return std.fmt.format(writer, "_: __", .{});
                 }
             };
         };
 
         pub const Object = struct {
-            pub const Field = struct { name: []const u8, type_kind: TypeKind };
+            pub const Field = union {
+                tuple: TypeKind,
+                field: struct {
+                    name: []const u8,
+                    type_kind: TypeKind,
+                },
+            };
             fields: []Field,
             procedures: ?[]const Procedure,
+            ordered: bool,
         };
 
         pub const TypeKind = union(enum) {
             array: struct { length_expr: ?[]const u8 },
-            generic: struct { name: []const u8 },
+            dynamic,
+            generic: struct {
+                name: []const u8,
+            },
             identifier: []const u8,
             no_return: void,
             primitive: enum { none }, // FIX:
-            proc: struct { params: ?std.ArrayList(Procedure.Param), trait_type: ?enum { once, mut } },
+            proc: struct { params: ?std.ArrayList(Procedure.Param) },
             ref: struct { child: ?*const TypeKind },
             tuple: std.ArrayList(TypeKind),
 
@@ -106,14 +128,14 @@ pub const NodeItem = struct {
                 switch (self) {
                     .tuple => |tuple_items| {
                         assert(tuple_items.items.len > 0);
-                        try std.fmt.format(writer, "(", .{});
+                        try std.fmt.format(writer, "struct {{", .{});
                         for (tuple_items.items, 0..) |ty_kind, idx| {
                             try std.fmt.format(writer, "{s}", .{ty_kind});
-                            if (idx != (tuple_items.items.len - 1)) try std.fmt.format(writer, " | ", .{});
+                            if (idx != (tuple_items.items.len - 1)) try std.fmt.format(writer, ", ", .{});
                         }
-                        try std.fmt.format(writer, ")", .{});
+                        try std.fmt.format(writer, "}} ", .{});
                     },
-                    else => return std.fmt.format(writer, "{{{{ {s} }}}}", .{@tagName(self)}),
+                    else => return std.fmt.format(writer, "<.{s}>", .{@tagName(self)}),
                 }
             }
         };
@@ -166,6 +188,18 @@ pub const NodeItem = struct {
             .impl_item => {
                 try std.fmt.format(writer, "// TODO: serialize impl_item\n", .{});
             },
+            .const_item => |item_data| {
+                assert(item_data.name == .plain);
+                assert(item_data.value_expr != null);
+                const val = item_data.value_expr.?;
+
+                try std.fmt.format(writer, "const {s}: {} = {s};", .{
+                    item_data.name.plain,
+                    item_data.type_kind,
+                    val,
+                });
+                try std.fmt.format(writer, "\n", .{});
+            },
             .procedure_item => |data| {
                 const name = self.name orelse unreachable;
                 // TODO: visibility
@@ -177,7 +211,7 @@ pub const NodeItem = struct {
                     if (idx != (param_len - 1)) try std.fmt.format(writer, ",", .{});
                 }
 
-                try std.fmt.format(writer, ")", .{});
+                try std.fmt.format(writer, ") ", .{});
 
                 if (data.return_type) |return_type| {
                     try std.fmt.format(writer, "{s}", .{return_type});
@@ -222,6 +256,7 @@ pub const NodeType = enum {
     base_field_initializer,
     binary_expression,
     block,
+    block_comment,
     boolean_literal,
     bounded_type,
     bracketed_type,
@@ -379,6 +414,7 @@ pub const NodeType = enum {
         if (eql(str, "await_expression")) return .await_expression;
         if (eql(str, "base_field_initializer")) return .base_field_initializer;
         if (eql(str, "binary_expression")) return .binary_expression;
+        if (eql(str, "block_comment")) return .block_comment;
         if (eql(str, "block")) return .block;
         if (eql(str, "boolean_literal")) return .boolean_literal;
         if (eql(str, "bounded_type")) return .bounded_type;
@@ -525,6 +561,7 @@ pub const NodeType = enum {
         if (eql(str, "yield_expression")) return .yield_expression;
 
         eprintln("Invalid Type '{s}'", .{str});
+
         unreachable;
     }
 };
