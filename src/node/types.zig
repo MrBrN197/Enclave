@@ -8,6 +8,15 @@ const assert = std.debug.assert;
 
 const is_empty = @import("../root.zig").is_empty;
 
+pub const IdentifierKind = union {
+    named: []const u8,
+    matched: Pattern,
+
+    pub const Pattern = struct {
+        kind: NodeItem.ItemData.TypeKind,
+    };
+};
+
 pub const NodeItem = struct {
     // TODO: contents: {}
     name: ?[]const u8,
@@ -53,26 +62,29 @@ pub const NodeItem = struct {
             return_type: ?TypeKind,
 
             pub const Param = struct {
-                name: []const u8,
+                name: IdentifierKind,
                 typekind: ?TypeKind,
 
                 const Self = @This();
 
                 pub fn format(self: Self, comptime _: []const u8, _: std.fmt.FormatOptions, writer: Writer) !void {
-                    if (self.typekind) |ty| {
-                        switch (ty) {
-                            .tuple => |tuple_types| {
-                                for (tuple_types.items, 0) |tuple_type, idx| {
-                                    try std.fmt.format(writer, "{s}: {{{s}}}", .{(tuple_type)});
-                                    if (idx != (tuple_types.items.len - 1)) try std.fmt.format(writer, " | ", .{});
-                                }
-                            },
-                            // FIX: unreachable
-                            else => return std.fmt.format(writer, "{s}: {{{s}}}", .{ self.name, @tagName(ty) }), // FIX:
-                        }
-                    } else { // FIX: unreachable
-                        return std.fmt.format(writer, "{s}", .{self.name});
-                    }
+                    _ = self; // autofix
+                    _ = writer; // autofix
+                    // FIX:
+                    // if (self.typekind) |ty| {
+                    //     switch (ty) {
+                    //         .tuple => |tuple_types| {
+                    //             for (tuple_types.items, 0) |tuple_type, idx| {
+                    //                 try std.fmt.format(writer, "{s}: {{{s}}}", .{tuple_type});
+                    //                 if (idx != (tuple_types.items.len - 1)) try std.fmt.format(writer, " | ", .{});
+                    //             }
+                    //         },
+                    //         // FIX: unreachable
+                    //         else => return std.fmt.format(writer, "{s}: {{{s}}}", .{ self.name, @tagName(ty) }), // FIX:
+                    //     }
+                    // } else { // FIX: unreachable
+                    //     return std.fmt.format(writer, "{s}", .{self.name});
+                    // }
                 }
             };
         };
@@ -89,10 +101,7 @@ pub const NodeItem = struct {
             identifier: []const u8,
             no_return: void,
             primitive: enum { none }, // FIX:
-            proc: struct {
-                params: ?std.ArrayList(Procedure.Param),
-                trait_type: ?enum { once, mut },
-            },
+            proc: struct { params: ?std.ArrayList(Procedure.Param), trait_type: ?enum { once, mut } },
             ref: struct { child: ?*const TypeKind },
             tuple: std.ArrayList(TypeKind),
 
@@ -164,7 +173,7 @@ pub const NodeItem = struct {
                 try std.fmt.format(writer, "\n", .{});
             },
             .impl_item => {
-                try std.fmt.format(writer, "// TODO: impl_item\n", .{});
+                try std.fmt.format(writer, "// TODO: serialize impl_item\n", .{});
             },
             .procedure_item => |data| {
                 const name = self.name orelse unreachable;
@@ -321,6 +330,7 @@ pub const NodeType = enum {
     scoped_use_list,
     self,
     self_parameter,
+    shorthand_field_identifier,
     shorthand_field_initializer,
     slice_pattern,
     source_file,
@@ -478,6 +488,7 @@ pub const NodeType = enum {
         if (eql(str, "scoped_use_list")) return .scoped_use_list;
         if (eql(str, "self_parameter")) return .self_parameter;
         if (eql(str, "self")) return .self;
+        if (eql(str, "shorthand_field_identifier")) return .shorthand_field_identifier;
         if (eql(str, "shorthand_field_initializer")) return .shorthand_field_initializer;
         if (eql(str, "slice_pattern")) return .slice_pattern;
         if (eql(str, "source_file")) return .source_file;

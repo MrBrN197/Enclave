@@ -69,24 +69,6 @@ pub const Parser = struct {
         return;
     }
 
-    pub fn print_syntax_tree(self: *const Parser) void {
-        _ = self; // autofix
-        // var lines = self.lines_iter;
-        // lines.reset(); // TODO:
-
-        // const root_node = c.ts_tree_root_node(self.tree);
-        // const current_node = Node.init(root_node, self.allocator);
-
-        // eprint("\n" ++ "=" ** 20, .{});
-        // eprint("{s}", .{current_node.sym});
-        // eprintln("=" ** 20, .{});
-
-        // const stdout = std.io.getStdOut();
-        // const writer = stdout.writer();
-
-        // current_node.write_to(self, writer);
-    }
-
     const Self = @This();
     pub fn parse(self: *const Self) [](NodeItem) {
         var lines = self.lines_iter;

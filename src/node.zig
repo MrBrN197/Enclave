@@ -10,10 +10,11 @@ const eql = @import("./root.zig").eql;
 const is_empty = @import("./root.zig").is_empty;
 
 const Parser = @import("./parser.zig").Parser; // TODO:
-
 const node_types = @import("./node/types.zig");
-const NodeType = node_types.NodeType;
+
+const IdentifierKind = node_types.IdentifierKind;
 const NodeItem = node_types.NodeItem;
+const NodeType = node_types.NodeType;
 const TypeKind = NodeItem.ItemData.TypeKind;
 
 const Writer = @TypeOf(std.io.getStdOut().writer());
@@ -216,11 +217,40 @@ pub const Node = struct {
             var fba = std.heap.FixedBufferAllocator.init(&buffer);
             const allocator = fba.allocator();
 
+            // NOTE: skip line/block comments
             if (eql(get_type(child, allocator), "line_comment")) continue; // FIX:
 
             children.append(
                 Node.init(
                     child,
+                    self.allocator,
+                ),
+            ) catch unreachable;
+        }
+
+        return children;
+    }
+
+    pub fn get_next_siblings(self: *const Node) std.ArrayList(Node) {
+        const ts_node = self.node;
+        var children = std.ArrayList(Node).init(self.allocator);
+
+        var next_sibling = ts_node;
+
+        while (true) {
+            next_sibling = c.ts_node_next_named_sibling(next_sibling);
+            if (c.ts_node_is_null(next_sibling)) break;
+
+            var buffer = [1]u8{0} ** 128;
+            var fba = std.heap.FixedBufferAllocator.init(&buffer);
+            const allocator = fba.allocator();
+
+            // NOTE: skip line/block comments
+            if (eql(get_type(next_sibling, allocator), "line_comment")) continue; // FIX:
+
+            children.append(
+                Node.init(
+                    next_sibling,
                     self.allocator,
                 ),
             ) catch unreachable;
@@ -692,7 +722,9 @@ pub const Node = struct {
                 return TypeKind{ .primitive = .none };
             },
             else => |tag| { // _type_identifier
-                assert(tag == .identifier or tag == .type_identifier);
+                assert(tag == .identifier or
+                    tag == .shorthand_field_identifier or
+                    tag == .type_identifier);
 
                 const text = parser.node_to_string(self.node, self.allocator);
                 return TypeKind{ .identifier = text }; // FIX: copy
@@ -750,7 +782,7 @@ pub const Node = struct {
                 unreachable;
             }
 
-            const NameType = struct { pname: []const u8, ptype: ?NodeItem.ItemData.TypeKind };
+            const NameType = struct { pname: IdentifierKind, ptype: ?NodeItem.ItemData.TypeKind };
             const name_type: NameType = blk: {
                 if (child.node_type == .parameter) {
 
@@ -759,7 +791,7 @@ pub const Node = struct {
 
                     const name = blk_name: {
                         if (pattern_field.node_type == .self) {
-                            break :blk_name "self"; // TODO EnumLiteral
+                            break :blk_name IdentifierKind{ .named = "self" }; // TODO EnumLiteral
                         } else {
                             const name = pattern_field.extract_pattern(parser);
                             break :blk_name name;
@@ -775,7 +807,10 @@ pub const Node = struct {
                     unreachable;
                 } else { // _type
                     const text = parser.node_to_string(child.node, self.allocator);
-                    if (eql(text, "_")) break :blk .{ .pname = text, .ptype = null };
+                    if (eql(text, "_")) break :blk .{
+                        .pname = IdentifierKind{ .named = text },
+                        .ptype = null,
+                    };
                     // TODO: return extract_type()
                     unreachable;
                 }
@@ -792,19 +827,62 @@ pub const Node = struct {
         return result;
     }
 
-    fn extract_pattern(self: *const Node, parser: *const Parser) []const u8 {
+    fn extract_pattern(
+        self: *const Node,
+        parser: *const Parser,
+    ) IdentifierKind {
         switch (self.node_type) {
             .identifier => {
                 const source = parser.node_to_string(self.node, self.allocator);
-                return source;
+                return IdentifierKind{ .named = source };
             },
-            // $._literal_pattern,
+            // _literal_pattern,
+            // $.string_literal,
+            // $.raw_string_literal,
+            // $.char_literal,
+            // $.boolean_literal,
+            // $.integer_literal,
+            // $.float_literal,
+            // $.negative_literal,
+
             // $.identifier,
             // $.scoped_identifier,
             // $.tuple_pattern,
             // $.tuple_struct_pattern,
-            // $.struct_pattern,
-            // $._reserved_identifier,
+            .struct_pattern => {
+                parser.print_source(self.node);
+
+                const type_field = self.get_field_unchecked("type");
+                const typekind = type_field.extract_type_ref(parser).?;
+                assert(typekind == .identifier);
+
+                // fields
+                const next_siblings = type_field.get_next_siblings();
+                for (next_siblings.items) |field| {
+                    if (field.node_type == .field_pattern) {
+
+                        // TODO: 'ref'?
+                        // TODO: $mutable_specifier?
+
+                        const name_field = field.get_field_unchecked("name");
+                        const name_identifier = name_field.extract_type_ref(parser).?;
+                        assert(name_identifier == .identifier);
+
+                        if (field.get_field("pattern")) |pattern_field| {
+                            const inner = pattern_field.extract_pattern(parser);
+                            _ = inner;
+                            @panic("todo");
+                        }
+
+                        @panic("todo");
+                    } else {
+                        parser.print_source(field.node);
+                        assert(field.node_type == .remaining_field_pattern);
+                        @panic("todo");
+                    }
+                }
+                unreachable;
+            },
             // $.ref_pattern,
             // $.slice_pattern,
             // $.captured_pattern,

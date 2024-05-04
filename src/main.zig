@@ -29,6 +29,7 @@ pub fn main() void {
         convert_file(filepath) catch |e| {
             switch (e) {
                 error.FileNotFound => eprintln("File Path Not Found: {s}", .{filepath}),
+                error.IsDir => std.log.warn("TODO: handle directories \"{s}\"", .{filepath}),
 
                 else => {
                     eprintln("Failed to Read File {s}", .{filepath});
