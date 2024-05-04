@@ -37,7 +37,8 @@ pub fn is_of_type(node: c.TSNode, name: []const u8) bool {
 pub fn get_type(node: c.TSNode, allocator: std.mem.Allocator) []const u8 { // TODO: remove
     const node_name = c.ts_node_type(node);
     assert(mem.len(node_name) < 1024);
-    const copy = allocator.alloc(u8, 1024) catch unreachable; // TODO:
+    const len = std.mem.len(node_name);
+    const copy = allocator.alloc(u8, len) catch unreachable; // TODO:
     mem.copyForwards(u8, copy, node_name[0..mem.len(node_name)]);
     return copy[0..mem.len(node_name)];
 }
@@ -209,9 +210,17 @@ pub const Node = struct {
         const named_child_count = c.ts_node_named_child_count(ts_node);
 
         for (0..named_child_count) |idx| {
+            const child = get_child_named(ts_node, @truncate(idx)) orelse unreachable;
+
+            var buffer = [1]u8{0} ** 128;
+            var fba = std.heap.FixedBufferAllocator.init(&buffer);
+            const allocator = fba.allocator();
+
+            if (eql(get_type(child, allocator), "line_comment")) continue; // FIX:
+
             children.append(
                 Node.init(
-                    get_child_named(ts_node, @truncate(idx)) orelse unreachable,
+                    child,
                     self.allocator,
                 ),
             ) catch unreachable;
@@ -245,7 +254,8 @@ pub const Node = struct {
 
         if (self.get_field("body")) |body_field| {
             // TODO: if get_field(body_field, "where_clause") |where_clause field| {}
-            if (eql(body_field.sym, "field_declaration_list")) {
+
+            if (body_field.node_type == .field_declaration_list) {
                 const decls = body_field.get_children_named();
                 for (decls.items) |decl| {
                     switch (decl.node_type) {
@@ -265,7 +275,12 @@ pub const Node = struct {
                             } else unreachable;
                         },
                         .attribute_item => continue, // FIX:
-                        else => unreachable,
+                        else => |tag| {
+                            _ = tag; // autofix
+                            parser.print_source(decl.node);
+
+                            unreachable;
+                        },
                     }
                 }
             } else if (eql(body_field.sym, "ordered_field_declaration_list")) {

@@ -48,6 +48,27 @@ pub const Parser = struct {
         return;
     }
 
+    pub fn print_source(self: *const Parser, node: c.TSNode) void {
+        const start = c.ts_node_start_point(node);
+        const source = self.node_to_string(node, self.allocator); // FIX: clear
+
+        const row = start.row + 1;
+        const column = start.column + 1;
+
+        std.log.debug(
+            "=" ** 20 ++ " .{[tag]s} " ++ "=" ** 20 ++
+                \\ {[row]}:{[column]}
+                \\ {[source]s}
+                \\
+                \\
+            ,
+
+            .{ .row = row, .column = column, .source = source, .tag = c.ts_node_type(node) },
+        );
+
+        return;
+    }
+
     pub fn print_syntax_tree(self: *const Parser) void {
         _ = self; // autofix
         // var lines = self.lines_iter;

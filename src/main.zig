@@ -16,7 +16,7 @@ var gpa_allocator = std.heap.GeneralPurposeAllocator(.{
 }){};
 const gpa = gpa_allocator.allocator();
 
-pub const std_options = std.Options{ .log_level = .info };
+pub const std_options = std.Options{ .log_level = .debug };
 
 pub fn main() void {
     var argv = std.process.args();
