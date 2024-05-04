@@ -84,10 +84,15 @@ pub const NodeItem = struct {
         };
 
         pub const TypeKind = union(enum) {
+            array: struct { length_expr: ?[]const u8 },
             generic: struct { name: []const u8 },
             identifier: []const u8,
             no_return: void,
             primitive: enum { none }, // FIX:
+            proc: struct {
+                params: ?std.ArrayList(Procedure.Param),
+                trait_type: ?enum { once, mut },
+            },
             ref: struct { child: ?*const TypeKind },
             tuple: std.ArrayList(TypeKind),
 

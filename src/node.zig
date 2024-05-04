@@ -561,7 +561,8 @@ pub const Node = struct {
     fn extract_type_ref(self: *const @This(), parser: *const Parser) ?NodeItem.ItemData.TypeKind {
         switch (self.node_type) {
             .abstract_type => {
-                unreachable;
+                const result = self.extract_abstract_type(parser);
+                return result;
             },
             .reference_type => {
                 // TODO: $lifetime,
@@ -646,10 +647,12 @@ pub const Node = struct {
                 return null;
             },
             .array_type => {
-                unreachable;
+                const result = self.extract_array_type(parser);
+                return result;
             },
             .function_type => {
-                unreachable;
+                const result = self.extract_function_type(parser);
+                return result; // autofix
             },
             .macro_invocation => {
                 unreachable;
@@ -1213,10 +1216,28 @@ pub const Node = struct {
             // );
         }
     }
-    fn extract_abstract_type(self: *const @This(), parser: *const Parser) void {
-        _ = parser; // autofix
-        _ = self; // autofix
-        // out(writer, "TODO: -> {{{{ABSTRACT_TYPE}}}}", .{});
+    fn extract_abstract_type(self: *const @This(), parser: *const Parser) TypeKind {
+        const text = parser.node_to_string(self.node, self.allocator);
+        eprintln("Source \n: {s}\n", .{text});
+
+        if (self.get_field("type_parameters")) |_| {
+            unreachable;
+        }
+
+        const trait_field = self.get_field_unchecked("trait");
+        switch (trait_field.node_type) {
+            // ._type_identifier => unreachable,
+            .scoped_type_identifier => unreachable,
+            .removed_trait_bound => unreachable,
+            .generic_type => unreachable,
+            .function_type => {
+                const typekind = trait_field.extract_function_type(parser);
+                return typekind;
+            },
+            .tuple_type => unreachable,
+            else => unreachable,
+        }
+        unreachable;
     }
     fn extract_reference_type(self: *const @This(), parser: *const Parser) void {
         // NOTE: lifetime ignored
@@ -1288,26 +1309,64 @@ pub const Node = struct {
         // out(writer, "void", .{});
     }
 
-    fn extract_array_type(self: *const @This(), parser: *const Parser) void {
+    fn extract_array_type(self: *const @This(), parser: *const Parser) TypeKind {
         const element = self.get_field("element") orelse unreachable;
 
         if (self.get_field("length")) |length_field| {
-            const length_expression = parser.node_to_string(length_field.node, self.allocator);
-            _ = length_expression; // autofix
-            //     out(writer, "[", .{});
-            //     out(writer, "{s}", .{length_expression});
-            //     out(writer, "]", .{});
+            const length_expression = parser.node_to_string(length_field.node, self.allocator); // FIX:
+            return TypeKind{ .array = .{ .length_expr = length_expression } }; // FIX: parseInt
         } else {
-            //     out(writer, "[_]", .{});
+            return TypeKind{ .array = .{ .length_expr = null } };
         }
 
         element.write_to(parser);
     }
-    fn extract_function_type(self: *const @This(), parser: *const Parser) void {
-        _ = parser; // autofix
-        _ = self; // autofix
-        // out(writer, "TODO:  -> {{{{FUNCTION_TYPE}}}}", .{});
+    fn extract_function_type(self: *const @This(), parser: *const Parser) TypeKind {
+        assert(self.node_type == .function_type); // todo: remove
+
+        // TODO: $for_lifetimes?
+        // var params = std.ArrayList(NodeItem.ItemData.Procedure.Param).init(self.allocator);
+
+        const parameters_field = self.get_field_unchecked("parameters"); // TODO: $parameters
+        _ = parameters_field;
+
+        if (self.get_field("return_type")) |_| {} //TODO:  $_type
+
+        if (self.get_field("trait")) |field| {
+            const trait_kind = blk: {
+                if (field.node_type == .scoped_type_identifier) {
+                    unreachable;
+                } else {
+                    assert(field.node_type == .type_identifier);
+                    const typekind = field.extract_type_ref(parser).?;
+
+                    break :blk (if (eql(typekind.identifier, "FnMut")) .mut else unreachable);
+                }
+            };
+
+            const result = TypeKind{
+                .proc = .{
+                    .params = null, // FIX:
+                    .trait_type = trait_kind,
+                },
+            };
+            return result;
+        } else {
+            const children = self.get_children_named();
+            for (children.items) |child| {
+                if (child.node_type != .function_modifiers) continue;
+                unreachable;
+            }
+            const result = TypeKind{
+                .proc = .{
+                    .params = null, // FIX:
+                    .trait_type = null,
+                },
+            };
+            return result;
+        }
     }
+
     fn extract_macro_invocation(self: *const @This(), parser: *const Parser) void {
         _ = parser; // autofix
 
