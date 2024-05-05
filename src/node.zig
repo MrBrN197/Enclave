@@ -12,10 +12,10 @@ const is_empty = @import("./root.zig").is_empty;
 const Parser = @import("./parser.zig").Parser; // TODO:
 const node_types = @import("./node/types.zig");
 
-const IdentifierKind = node_types.IdentifierKind;
-const NodeItem = node_types.NodeItem;
-const NodeType = node_types.NodeType;
-const TypeKind = NodeItem.Data.TypeKind;
+pub const IdentifierKind = node_types.IdentifierKind;
+pub const NodeItem = node_types.NodeItem;
+pub const NodeType = node_types.NodeType;
+pub const TypeKind = NodeItem.Data.TypeKind;
 
 const Writer = @TypeOf(std.io.getStdOut().writer());
 const Allocator = std.mem.Allocator;
@@ -109,6 +109,28 @@ pub const Node = struct {
                 }
             },
 
+            .associated_type => {
+
+                // FIX:
+                // const name_field = self.get_field_unchecked("name");
+                // const typekind = name_field.extract_type_ref(parser);
+                // assert(typekind == .identifier);
+
+                // // TODO: if (self.get_field("type_parameters"));
+                // // TODO: if (self.get_field("bounds"));
+
+                // // TODO: $where_clause;
+
+                // const item_data = NodeItem.Data{
+                //     .type_item = .{
+                //         .name = typekind.identifier,
+                //         .kind = typekind,
+                //     },
+                // };
+
+                // const item = NodeItem.init(item_data, typekind.identifier);
+                // collect.append(item) catch unreachable;
+            },
             .type_item => {
                 const type_item = self.extract_type_item(parser);
                 const typename = type_item.name;
@@ -153,18 +175,23 @@ pub const Node = struct {
                 collect.append(item) catch unreachable;
             },
 
-            .function_signature_item => return, // FIX:  comment
+            .function_signature_item => {}, // FIX:  comment
 
-            .extern_crate_declaration, .attribute_item => return, // TODO
+            .extern_crate_declaration, .attribute_item => {}, // TODO
+            .expression_statement => {}, // TODO:
 
-            .block_comment, .line_comment, .use_declaration => return,
-            .macro_invocation, .macro_definition => return,
-            .empty_statement => return,
+            .block_comment, .line_comment, .use_declaration => {},
+            .macro_invocation, .macro_definition => {},
+            .empty_statement => {},
 
             else => |tag| {
                 const gray_open = "\u{001b}[38;5;8m\n";
                 const gray_close = "\u{001b}[m\n";
-                eprintln(gray_open ++ "// TODO: {s}" ++ gray_close, .{@tagName(tag)});
+
+                eprintln(gray_open ++ "// TODO: {s}", .{@tagName(tag)});
+
+                parser.print_source(self.node);
+                eprintln(gray_close, .{});
             },
         }
     }
@@ -308,18 +335,16 @@ pub const Node = struct {
                             const name = parser.node_to_string_alloc(name_field.node, self.allocator);
                             const type_field = decl.get_field_unchecked("type"); //  $_type
                             const type_kind = type_field.extract_type_ref(parser);
-                            if (type_kind) |ty_kind| {
-                                const field = NodeItem.Data.Object.Field{ .field = .{
-                                    .name = name,
-                                    .type_kind = ty_kind,
-                                } };
 
-                                fields.append(field) catch unreachable;
-                            } else unreachable;
+                            const field = NodeItem.Data.Object.Field{ .field = .{
+                                .name = name,
+                                .type_kind = type_kind,
+                            } };
+
+                            fields.append(field) catch unreachable;
                         },
                         .attribute_item => continue, // FIX:
-                        else => |tag| {
-                            _ = tag; // autofix
+                        else => |_| {
                             parser.print_source(decl.node);
 
                             @panic("todo");
@@ -337,7 +362,7 @@ pub const Node = struct {
                     if (child.node_type != .visibility_modifier) continue; // FIX:
 
                     const type_field = child.get_field_unchecked("type");
-                    const type_kind = type_field.extract_type_ref(parser).?;
+                    const type_kind = type_field.extract_type_ref(parser);
                     fields.append(NodeItem.Data.Object.Field{ .tuple = type_kind }) catch unreachable;
                 }
             } else unreachable;
@@ -391,12 +416,12 @@ pub const Node = struct {
     fn extract_const_item(self: *const @This(), parser: *const Parser) NodeItem {
         const name_field = self.get_field_unchecked("name");
 
-        const name_ = name_field.extract_type_ref(parser).?;
+        const name_ = name_field.extract_type_ref(parser);
         assert(name_ == .identifier);
         const name = name_.identifier;
 
         const type_field = self.get_field_unchecked("type");
-        const type_kind = type_field.extract_type_ref(parser).?;
+        const type_kind = type_field.extract_type_ref(parser);
 
         const value_expr = blk: {
             if (self.get_field("value")) |expr_field| { // TODO: _expr
@@ -420,12 +445,12 @@ pub const Node = struct {
 
         const name_field = self.get_field_unchecked("name");
 
-        const name_ = name_field.extract_type_ref(parser).?;
+        const name_ = name_field.extract_type_ref(parser);
         assert(name_ == .identifier);
         const name = name_.identifier;
 
         const type_field = self.get_field_unchecked("type");
-        const type_kind = type_field.extract_type_ref(parser).?;
+        const type_kind = type_field.extract_type_ref(parser);
 
         const value_expr = blk: {
             if (self.get_field("value")) |expr_field| { // TODO: _expr
@@ -447,7 +472,7 @@ pub const Node = struct {
         // TODO: $visibility_modifier,
 
         const name_field = self.get_field_unchecked("name"); // $_type_identifier
-        const name = name_field.extract_type_ref(parser).?;
+        const name = name_field.extract_type_ref(parser);
 
         var type_constraints = std.ArrayList([]const u8).init(self.allocator);
 
@@ -597,7 +622,7 @@ pub const Node = struct {
         // out(writer, "\n", .{});
     }
 
-    fn extract_type_ref(self: *const @This(), parser: *const Parser) ?NodeItem.Data.TypeKind {
+    fn extract_type_ref(self: *const @This(), parser: *const Parser) NodeItem.Data.TypeKind {
         switch (self.node_type) {
             .abstract_type => {
                 const result = self.extract_abstract_type(parser);
@@ -622,7 +647,7 @@ pub const Node = struct {
             .generic_type => { // FIX:
 
                 const type_field = self.get_field_unchecked("type");
-                const name = type_field.extract_type_ref(parser).?;
+                const name = type_field.extract_type_ref(parser);
                 assert(name == .identifier);
 
                 const type_args = self.get_field_unchecked("type_arguments"); // $type_arguments
@@ -640,14 +665,14 @@ pub const Node = struct {
                         switch (child.node_type) {
                             .type_binding => {
                                 const name_field = child.get_field_unchecked("name");
-                                const child_name = name_field.extract_type_ref(parser).?;
+                                const child_name = name_field.extract_type_ref(parser);
 
                                 assert(child_name == .identifier);
 
                                 if (child.get_field("type_arguments")) |_| @panic("todo"); // $type_arguments
 
                                 const child_type_field = child.get_field_unchecked("type");
-                                const child_type = child_type_field.extract_type_ref(parser).?;
+                                const child_type = child_type_field.extract_type_ref(parser);
                                 constraints.append(.{
                                     .name = child_name.identifier,
                                     .type_kind = child_type,
@@ -707,7 +732,7 @@ pub const Node = struct {
                 _ = kind; // FIX:  identifier with path;
 
                 const name_field = self.get_field_unchecked("name");
-                const type_kind = name_field.extract_type_ref(parser) orelse unreachable;
+                const type_kind = name_field.extract_type_ref(parser);
                 assert(type_kind == .identifier);
 
                 return type_kind;
@@ -717,14 +742,14 @@ pub const Node = struct {
 
                 const children = self.get_children_named();
                 for (children.items) |child| {
-                    const _type = child.extract_type_ref(parser);
-                    if (_type) |t| (tuples_types.append(t) catch unreachable) else unreachable;
+                    const t = child.extract_type_ref(parser);
+                    tuples_types.append(t) catch unreachable;
                 }
 
                 return TypeKind{ .tuple = tuples_types };
             },
             .unit_type => {
-                return null;
+                return .none;
             },
             .array_type => {
                 const result = self.extract_array_type(parser);
@@ -744,8 +769,8 @@ pub const Node = struct {
                 return .dynamic;
             },
             .bounded_type => {
-                std.log.debug("bounded_type ignored", .{});
-                return null;
+                std.log.warn("bounded_type ignored", .{});
+                return .none; // FIX:
             },
             .removed_trait_bound => {
                 @panic("todo");
@@ -803,9 +828,8 @@ pub const Node = struct {
         const return_type_kind = blk: {
             if (self.get_field("return_type")) |return_type| {
                 const type_kind = return_type.extract_type_ref(parser);
-                if (type_kind) |kind| {
-                    if (kind == .identifier) assert(!is_empty(kind.identifier));
-                }
+
+                if (type_kind == .identifier) assert(!is_empty(type_kind.identifier));
 
                 break :blk type_kind;
             } else break :blk null;
@@ -863,7 +887,8 @@ pub const Node = struct {
                     const typename = type_field.extract_type_ref(parser);
                     break :blk .{ .pname = name, .ptype = typename };
                 } else if (child.node_type == .self_parameter) {
-                    @panic("todo");
+                    const name: IdentifierKind = .self;
+                    break :blk .{ .pname = name, .ptype = null };
                 } else if (child.node_type == .variadic_parameter) {
                     @panic("todo");
                 } else { // _type
@@ -911,10 +936,8 @@ pub const Node = struct {
             // $.tuple_pattern,
             // $.tuple_struct_pattern,
             .struct_pattern => {
-                parser.print_source(self.node);
-
                 const type_field = self.get_field_unchecked("type");
-                const typekind = type_field.extract_type_ref(parser).?;
+                const typekind = type_field.extract_type_ref(parser);
                 assert(typekind == .identifier);
 
                 // fields
@@ -926,7 +949,7 @@ pub const Node = struct {
                         // TODO: $mutable_specifier?
 
                         const name_field = field.get_field_unchecked("name");
-                        const name_identifier = name_field.extract_type_ref(parser).?;
+                        const name_identifier = name_field.extract_type_ref(parser);
                         assert(name_identifier == .identifier);
 
                         if (field.get_field("pattern")) |pattern_field| {
@@ -1025,7 +1048,7 @@ pub const Node = struct {
         }
 
         const type_field = self.get_field_unchecked("type");
-        const type_ref = type_field.extract_type_ref(parser).?;
+        const type_ref = type_field.extract_type_ref(parser);
 
         // TODO: $where_clause?
         // TODO: if(self.get_field("body") || // $declaration_list
@@ -1167,12 +1190,11 @@ pub const Node = struct {
 
         const trait_field = self.get_field_unchecked("trait");
         return switch (trait_field.node_type) {
-            // ._type_identifier
             .scoped_type_identifier => @panic("todo"),
             .removed_trait_bound => @panic("todo"),
 
             .generic_type => {
-                const type_kind = trait_field.extract_type_ref(parser).?;
+                const type_kind = trait_field.extract_type_ref(parser);
                 assert(type_kind == .generic);
                 return type_kind;
             },
@@ -1181,7 +1203,12 @@ pub const Node = struct {
                 return typekind;
             },
             .tuple_type => unreachable,
-            else => unreachable,
+            else => {
+                // ._type_identifier
+                const type_kind = trait_field.extract_type_ref(parser);
+                assert(type_kind == .identifier);
+                return type_kind;
+            },
         };
     }
 
@@ -1219,10 +1246,11 @@ pub const Node = struct {
                     unreachable;
                 } else {
                     assert(field.node_type == .type_identifier);
-                    const typekind = field.extract_type_ref(parser).?;
+                    const typekind = field.extract_type_ref(parser);
                     assert(typekind == .identifier);
 
                     assert(eql(typekind.identifier, "Fn") or
+                        eql(typekind.identifier, "FnOnce") or
                         eql(typekind.identifier, "FnMut"));
                 }
             };
@@ -1237,11 +1265,27 @@ pub const Node = struct {
             const children = self.get_children_named();
             for (children.items) |child| {
                 if (child.node_type != .function_modifiers) continue;
+                var buffer = [_]u8{1} ** 10;
+                var fba = std.heap.FixedBufferAllocator.init(&buffer);
+                const allocator = fba.allocator();
+
+                const text = parser.node_to_string_alloc(child.node, allocator);
+
+                if (eql(text, "unsafe")) continue;
+
+                // TODO:
+                // 'async',
+                // 'default',
+                // 'const',
+                // 'unsafe',
+                // $extern_modifier,
+
                 unreachable;
             }
             const result = TypeKind{
                 .proc = .{
                     .params = null, // FIX:
+
                 },
             };
             return result;

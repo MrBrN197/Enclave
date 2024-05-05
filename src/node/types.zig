@@ -9,10 +9,11 @@ const assert = std.debug.assert;
 const is_empty = @import("../root.zig").is_empty;
 
 pub const IdentifierKind = union(enum) {
-    plain: []const u8,
-    matched: Pattern,
-    /// FIX: '_'
     discarded,
+    /// FIX: '_'
+    matched: Pattern,
+    plain: []const u8,
+    self,
 
     pub const Pattern = struct {
         kind: void,
@@ -23,24 +24,24 @@ pub const NodeItem = struct {
     // TODO: visibility,
 
     // TODO: contents: {}
+    annotations: ?std.ArrayList([]const u8),
+    data: Data,
     name: ?[]const u8, // TODO: remove
     path: ?[]const u8,
-    data: Data,
-    annotations: ?std.ArrayList([]const u8),
 
     pub const Data = union(enum) {
-        procedure_item: Procedure,
-        object_item: Object,
-        type_item: TypeItem,
-        impl_item: Impl,
-        enum_item: Enum,
-        module_item: Module,
         const_item: Constant,
+        enum_item: Enum,
+        impl_item: Impl,
+        module_item: Module,
+        object_item: Object,
+        procedure_item: Procedure,
         trait_item: struct {
             name: []const u8,
             items: std.ArrayList(NodeItem),
             constraints: std.ArrayList([]const u8),
         },
+        type_item: TypeItem,
 
         pub const Constant = struct {
             name: IdentifierKind,
@@ -117,6 +118,7 @@ pub const NodeItem = struct {
                 name: []const u8,
             },
             identifier: []const u8,
+            none,
             no_return: void,
             primitive: enum {
                 u16,
@@ -137,6 +139,7 @@ pub const NodeItem = struct {
                 f32,
                 f64,
             }, // FIX:
+
             proc: struct { params: ?std.ArrayList(Procedure.Param) },
             ref: struct { child: ?*const TypeKind },
             tuple: std.ArrayList(TypeKind),
