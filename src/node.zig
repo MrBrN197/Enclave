@@ -15,7 +15,7 @@ const node_types = @import("./node/types.zig");
 const IdentifierKind = node_types.IdentifierKind;
 const NodeItem = node_types.NodeItem;
 const NodeType = node_types.NodeType;
-const TypeKind = NodeItem.ItemData.TypeKind;
+const TypeKind = NodeItem.Data.TypeKind;
 
 const Writer = @TypeOf(std.io.getStdOut().writer());
 const Allocator = std.mem.Allocator;
@@ -37,7 +37,7 @@ pub fn is_of_type(node: c.TSNode, name: []const u8) bool {
 
 pub fn get_type(node: c.TSNode, allocator: std.mem.Allocator) []const u8 { // TODO: remove
     const node_name = c.ts_node_type(node);
-    assert(mem.len(node_name) < 1024);
+    assert(mem.len(node_name) < 1024); // TODO: remove
     const len = std.mem.len(node_name);
     const copy = allocator.alloc(u8, len) catch unreachable; // TODO:
     mem.copyForwards(u8, copy, node_name[0..mem.len(node_name)]);
@@ -54,28 +54,29 @@ pub const Node = struct {
 
     const Self = @This();
 
-    pub fn init(node: c.TSNode, allocator: std.mem.Allocator) @This() {
+    pub fn init(node: c.TSNode, allocator: std.mem.Allocator) Self {
         const point_start = c.ts_node_start_point(node);
         const point_end = c.ts_node_end_point(node);
 
         const sym_name = get_type(node, allocator);
         const node_type = NodeType.from_string(sym_name);
 
-        return @This(){
-            .node_type = node_type,
-            .node = node,
-            .sym = sym_name,
-            .row_start = .{ point_start.row, point_start.column },
-            .row_end = .{ point_end.row, point_end.column },
+        return Self{
             .allocator = allocator,
+            .node = node,
+            .node_type = node_type,
+            .row_end = .{ point_end.row, point_end.column },
+            .row_start = .{ point_start.row, point_start.column },
+            .sym = sym_name,
         };
     }
 
-    pub fn deinit(_: *Node) void {
+    pub fn deinit(_: *Self) void {
         // FIX:
+        // self.allocator.free(self.sym);
     }
 
-    pub fn extract_type_item(self: *const Node, parser: *const Parser) TypeItem {
+    pub fn extract_type_item(self: *const Node, parser: *const Parser) NodeItem.Data.TypeItem {
         // TODO: $visibility_modifier
 
         const name_field = self.get_field_unchecked("name"); //  $_type_identifier
@@ -86,7 +87,7 @@ pub const Node = struct {
         const type_kind = type_field.extract_type_ref(parser);
         // TODO: $where_clause,
 
-        return NodeItem.ItemData.TypeItem{
+        return NodeItem.Data.TypeItem{
             .name = typename,
             .kind = type_kind,
         };
@@ -108,7 +109,16 @@ pub const Node = struct {
                 }
             },
 
-            .type_item => return,
+            .type_item => {
+                const type_item = self.extract_type_item(parser);
+                const typename = type_item.name;
+                const item_data = NodeItem.Data{
+                    .type_item = type_item,
+                };
+
+                const item = NodeItem.init(item_data, typename);
+                collect.append(item) catch unreachable;
+            },
 
             .function_item => {
                 const item = self.extract_function_item(parser);
@@ -134,9 +144,15 @@ pub const Node = struct {
                 const item = self.extract_const_item(parser);
                 collect.append(item) catch unreachable;
             },
+            .static_item => {
+                const item = self.extract_static_item(parser);
+                collect.append(item) catch unreachable;
+            },
 
             .extern_crate_declaration, .attribute_item => return, // TODO
             .line_comment, .use_declaration => return,
+            .macro_invocation, .macro_definition => return,
+            .empty_statement => return,
 
             else => |tag| {
                 const gray_open = "\u{001b}[38;5;8m\n";
@@ -144,23 +160,6 @@ pub const Node = struct {
                 eprintln(gray_open ++ "// TODO: {s}" ++ gray_close, .{@tagName(tag)});
             },
         }
-    }
-
-    const TypeItem = NodeItem.ItemData.TypeItem;
-    pub fn extract_type_items(self: *const Self, parser: *const Parser) std.ArrayList(TypeItem) {
-        // FIX: check valid node_type;
-        var type_items = std.ArrayList(TypeItem).init(parser.allocator); // FIX:
-        const children = self.get_children_named();
-        for (children.items) |child| {
-            switch (child.node_type) {
-                .type_item => {
-                    const item = child.extract_type_item(parser);
-                    type_items.append(item) catch unreachable;
-                },
-                else => continue,
-            }
-        }
-        return type_items;
     }
 
     pub fn get_source_text(self: *const Node) []const []const u8 {
@@ -286,7 +285,7 @@ pub const Node = struct {
 
         // if (self.get_field(self, "type_parameters")) ||  // TODO:
 
-        var fields = std.ArrayList(NodeItem.ItemData.Object.Field).init(self.allocator);
+        var fields = std.ArrayList(NodeItem.Data.Object.Field).init(self.allocator);
         var ordered = false;
 
         if (self.get_field("body")) |body_field| {
@@ -303,7 +302,7 @@ pub const Node = struct {
                             const type_field = decl.get_field_unchecked("type"); //  $_type
                             const type_kind = type_field.extract_type_ref(parser);
                             if (type_kind) |ty_kind| {
-                                const field = NodeItem.ItemData.Object.Field{ .field = .{
+                                const field = NodeItem.Data.Object.Field{ .field = .{
                                     .name = name,
                                     .type_kind = ty_kind,
                                 } };
@@ -332,15 +331,15 @@ pub const Node = struct {
 
                     const type_field = child.get_field_unchecked("type");
                     const type_kind = type_field.extract_type_ref(parser).?;
-                    fields.append(NodeItem.ItemData.Object.Field{ .tuple = type_kind }) catch unreachable;
+                    fields.append(NodeItem.Data.Object.Field{ .tuple = type_kind }) catch unreachable;
                 }
             } else unreachable;
         }
 
-        const object = NodeItem.ItemData{
+        const object = NodeItem.Data{
             .object_item = .{
                 .fields = fields.items,
-                .procedures = null, // TODO:
+
                 .ordered = ordered,
             },
         };
@@ -351,8 +350,6 @@ pub const Node = struct {
     }
 
     fn extract_body(self: *const Self, parser: *const Parser) std.ArrayList(NodeItem) {
-        // const type_items = self.extract_type_items(parser);
-
         var node_items = std.ArrayList(NodeItem).init(parser.allocator); // TODO:
         self.extract_node_items(parser, &node_items);
 
@@ -401,7 +398,7 @@ pub const Node = struct {
             } else break :blk null;
         };
 
-        const item_data = NodeItem.ItemData{ .const_item = .{
+        const item_data = NodeItem.Data{ .const_item = .{
             .name = IdentifierKind{ .plain = name },
             .type_kind = type_kind,
             .value_expr = value_expr,
@@ -409,6 +406,36 @@ pub const Node = struct {
         const result = NodeItem.init(item_data, name);
         return result;
     }
+
+    fn extract_static_item(self: *const @This(), parser: *const Parser) NodeItem {
+        // TODO: $visibility_modifier?
+        // TODO: $mutable_specifier?
+
+        const name_field = self.get_field_unchecked("name");
+
+        const name_ = name_field.extract_type_ref(parser).?;
+        assert(name_ == .identifier);
+        const name = name_.identifier;
+
+        const type_field = self.get_field_unchecked("type");
+        const type_kind = type_field.extract_type_ref(parser).?;
+
+        const value_expr = blk: {
+            if (self.get_field("value")) |expr_field| { // TODO: _expr
+                const text = parser.node_to_string(expr_field.node, self.allocator);
+                break :blk text;
+            } else break :blk null;
+        };
+
+        const item_data = NodeItem.Data{ .const_item = .{
+            .name = IdentifierKind{ .plain = name },
+            .type_kind = type_kind,
+            .value_expr = value_expr,
+        } };
+        const result = NodeItem.init(item_data, name);
+        return result;
+    }
+
     fn extract_macro_definition(self: *const @This(), parser: *const Parser) void {
         const name_field = self.get_field("name") orelse unreachable;
 
@@ -522,7 +549,7 @@ pub const Node = struct {
         //     .module_item = module,
         // };
 
-        const module = NodeItem.ItemData{
+        const module = NodeItem.Data{
             .module_item = .{ .contents = node_items },
         };
         const result = NodeItem.init(module, name);
@@ -617,7 +644,7 @@ pub const Node = struct {
         // out(writer, "\n", .{});
     }
 
-    fn extract_type_ref(self: *const @This(), parser: *const Parser) ?NodeItem.ItemData.TypeKind {
+    fn extract_type_ref(self: *const @This(), parser: *const Parser) ?NodeItem.Data.TypeKind {
         switch (self.node_type) {
             .abstract_type => {
                 const result = self.extract_abstract_type(parser);
@@ -773,8 +800,27 @@ pub const Node = struct {
             .primitive_type => {
                 // FIX: test
 
-                // const text = parser.node_to_string(self.node, self.allocator);
-                return TypeKind{ .primitive = .none };
+                const text = parser.node_to_string(self.node, self.allocator);
+
+                if (eql(text, "u16")) return .{ .primitive = .u16 };
+                if (eql(text, "u32")) return .{ .primitive = .u32 };
+                if (eql(text, "u64")) return .{ .primitive = .u64 };
+                if (eql(text, "u8")) return .{ .primitive = .u8 };
+                if (eql(text, "i16")) return .{ .primitive = .i16 };
+                if (eql(text, "i32")) return .{ .primitive = .i32 };
+                if (eql(text, "i64")) return .{ .primitive = .i64 };
+                if (eql(text, "i8")) return .{ .primitive = .i8 };
+                if (eql(text, "char")) return .{ .primitive = .char };
+                if (eql(text, "str")) return .{ .primitive = .str };
+                if (eql(text, "bool")) return .{ .primitive = .bool };
+                if (eql(text, "u128")) return .{ .primitive = .u128 };
+                if (eql(text, "i128")) return .{ .primitive = .i128 };
+                if (eql(text, "isize")) return .{ .primitive = .isize };
+                if (eql(text, "usize")) return .{ .primitive = .usize };
+                if (eql(text, "f32")) return .{ .primitive = .f32 };
+                if (eql(text, "f64")) return .{ .primitive = .f64 };
+
+                unreachable;
             },
             else => |tag| { // _type_identifier
                 assert(tag == .identifier or
@@ -814,7 +860,7 @@ pub const Node = struct {
 
         // TODO: field('body') //  $.block;
 
-        const item_data = NodeItem.ItemData{
+        const item_data = NodeItem.Data{
             .procedure_item = .{
                 .params = params.items,
                 .return_type = return_type_kind,
@@ -828,8 +874,8 @@ pub const Node = struct {
     fn extract_parameters(
         self: *const @This(),
         parser: *const Parser,
-    ) std.ArrayList(NodeItem.ItemData.Procedure.Param) {
-        var result = std.ArrayList(NodeItem.ItemData.Procedure.Param).init(self.allocator);
+    ) std.ArrayList(NodeItem.Data.Procedure.Param) {
+        var result = std.ArrayList(NodeItem.Data.Procedure.Param).init(self.allocator);
 
         const children = self.get_children_named();
         for (children.items) |child| {
@@ -837,7 +883,7 @@ pub const Node = struct {
                 unreachable;
             }
 
-            const NameType = struct { pname: IdentifierKind, ptype: ?NodeItem.ItemData.TypeKind };
+            const NameType = struct { pname: IdentifierKind, ptype: ?NodeItem.Data.TypeKind };
             const name_type: NameType = blk: {
                 if (child.node_type == .parameter) {
 
@@ -881,7 +927,7 @@ pub const Node = struct {
             const param_name = name_type.pname;
             const param_kind = name_type.ptype;
 
-            result.append(NodeItem.ItemData.Procedure.Param{
+            result.append(NodeItem.Data.Procedure.Param{
                 .name = param_name,
                 .typekind = param_kind,
             }) catch unreachable; // FIX:
@@ -978,18 +1024,17 @@ pub const Node = struct {
 
         const variants = body.extract_enum_variants(parser);
 
-        const item_data = NodeItem.ItemData{ .enum_item = .{
-            .procedures = null,
+        const item_data = NodeItem.Data{ .enum_item = .{
             .variants = variants.items,
         } };
         const result = NodeItem.init(item_data, name);
         return result;
     }
 
-    fn extract_enum_variants(self: *const @This(), parser: *const Parser) std.ArrayList(NodeItem.ItemData.Enum.Variant) {
+    fn extract_enum_variants(self: *const @This(), parser: *const Parser) std.ArrayList(NodeItem.Data.Enum.Variant) {
         const children = self.get_children_named(); // FIX:
 
-        var variants = std.ArrayList(NodeItem.ItemData.Enum.Variant).init(self.allocator); // FIX:
+        var variants = std.ArrayList(NodeItem.Data.Enum.Variant).init(self.allocator); // FIX:
 
         for (children.items) |child| {
             // TODO: $attribute_item;
@@ -1005,7 +1050,7 @@ pub const Node = struct {
 
             // TODO: if child.get_field("value", $_expression?
 
-            const variant = NodeItem.ItemData.Enum.Variant{
+            const variant = NodeItem.Data.Enum.Variant{
                 .name = name,
             };
             variants.append(variant) catch unreachable;
@@ -1015,7 +1060,6 @@ pub const Node = struct {
 
     /// FIX:
     fn extract_impl_item(self: *const @This(), parser: *const Parser) NodeItem {
-        _ = parser; // autofix
         if (self.get_field("type_parameters")) |field| { //$type_parameters
             _ = field; // autofix
 
@@ -1027,13 +1071,17 @@ pub const Node = struct {
 
         }
 
-        // TODO: const type = extract_type_ref(get_field_unchecked(field("type"))); // $_type
+        const type_field = self.get_field_unchecked("type");
+        const type_ref = type_field.extract_type_ref(parser).?;
 
         // TODO: $where_clause?
         // TODO: if(self.get_field("body") || // $declaration_list
 
-        const item_data = NodeItem.ItemData{
-            .impl_item = .{ .procedures = null }, // TODO:
+        const item_data = NodeItem.Data{
+            .impl_item = .{
+                .procedures = null, // TODO:
+                .item_ref = type_ref,
+            }, // TODO:
         };
         const result = NodeItem.init(item_data, null);
         return result;

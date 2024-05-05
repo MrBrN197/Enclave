@@ -1,6 +1,6 @@
 const c = @import("./c.zig");
 const NodeItem = @import("./node/types.zig").NodeItem;
-const TypeItem = @import("./node/types.zig").NodeItem.ItemData.TypeItem;
+const TypeItem = @import("./node/types.zig").NodeItem.Data.TypeItem;
 const root = @import("./root.zig");
 const std = @import("std");
 const tsnode = @import("./node.zig");
@@ -39,7 +39,7 @@ pub const Parser = struct {
         };
     }
 
-    pub fn deinit(self: *Parser) !void {
+    pub fn deinit(self: Parser) !void {
         // Free all of the heap-allocated memory.
         // c.free(string);
         c.ts_tree_delete(self.tree);
@@ -79,9 +79,6 @@ pub const Parser = struct {
         assert(!c.ts_node_is_null(root_node));
 
         const current_node = Node.init(root_node, self.allocator);
-
-        const type_items = current_node.extract_type_items(self);
-        _ = type_items; // autofix
 
         current_node.extract_node_items(self, &result);
 

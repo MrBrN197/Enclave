@@ -23,11 +23,11 @@ pub const NodeItem = struct {
     // TODO: visibility,
 
     // TODO: contents: {}
-    name: ?[]const u8,
+    name: ?[]const u8, // TODO: remove
     path: ?[]const u8,
-    data: ItemData,
+    data: Data,
 
-    pub const ItemData = union(enum) {
+    pub const Data = union(enum) {
         procedure_item: Procedure,
         object_item: Object,
         type_item: TypeItem,
@@ -44,6 +44,7 @@ pub const NodeItem = struct {
 
         pub const Impl = struct {
             procedures: ?[]const Procedure,
+            item_ref: TypeKind, // TODO: remove '?'
         };
 
         pub const Module = struct {
@@ -51,7 +52,6 @@ pub const NodeItem = struct {
         };
 
         pub const Enum = struct {
-            procedures: ?[]const Procedure,
             variants: []const Variant,
 
             pub const Variant = struct {
@@ -93,7 +93,7 @@ pub const NodeItem = struct {
         };
 
         pub const Object = struct {
-            pub const Field = union {
+            pub const Field = union(enum) {
                 tuple: TypeKind,
                 field: struct {
                     name: []const u8,
@@ -101,7 +101,6 @@ pub const NodeItem = struct {
                 },
             };
             fields: []Field,
-            procedures: ?[]const Procedure,
             ordered: bool,
         };
 
@@ -113,7 +112,25 @@ pub const NodeItem = struct {
             },
             identifier: []const u8,
             no_return: void,
-            primitive: enum { none }, // FIX:
+            primitive: enum {
+                u16,
+                u32,
+                u64,
+                u8,
+                i16,
+                i32,
+                i64,
+                i8,
+                char,
+                str,
+                bool,
+                u128,
+                i128,
+                isize,
+                usize,
+                f32,
+                f64,
+            }, // FIX:
             proc: struct { params: ?std.ArrayList(Procedure.Param) },
             ref: struct { child: ?*const TypeKind },
             tuple: std.ArrayList(TypeKind),
@@ -134,6 +151,14 @@ pub const NodeItem = struct {
                             if (idx != (tuple_items.items.len - 1)) try std.fmt.format(writer, ", ", .{});
                         }
                         try std.fmt.format(writer, "}} ", .{});
+                    },
+                    .primitive => |prim| {
+                        try std.fmt.format(writer, "{s}", .{@tagName(prim)});
+                    },
+                    .ref => |ref| {
+                        _ = ref; // autofix
+                        // FIX:
+                        try std.fmt.format(writer, "&___", .{});
                     },
                     else => return std.fmt.format(writer, "<.{s}>", .{@tagName(self)}),
                 }
@@ -156,7 +181,7 @@ pub const NodeItem = struct {
         };
     };
 
-    pub fn init(data: ItemData, name: ?[]const u8) NodeItem {
+    pub fn init(data: Data, name: ?[]const u8) NodeItem {
         if (name) |str| assert(!is_empty(str));
 
         return NodeItem{
@@ -168,6 +193,8 @@ pub const NodeItem = struct {
     }
 
     pub fn serialize(self: *const NodeItem, writer: Writer) !void {
+        if (true) return; //FIX:
+
         switch (self.data) {
             .module_item => |mod| {
                 assert(self.name != null);
@@ -185,8 +212,8 @@ pub const NodeItem = struct {
 
                 try std.fmt.format(writer, "\n", .{});
             },
-            .impl_item => {
-                try std.fmt.format(writer, "// TODO: serialize impl_item\n", .{});
+            .impl_item => |_| {
+                try std.fmt.format(writer, "", .{});
             },
             .const_item => |item_data| {
                 assert(item_data.name == .plain);
@@ -222,13 +249,63 @@ pub const NodeItem = struct {
                 // self.to_str(writer); // TODO:
                 try std.fmt.format(writer, "\n", .{});
             },
+            .object_item => |item_data| {
+                assert(self.name != null);
+                const name = self.name.?;
+
+                var buffer = [_]u8{0} ** 4096;
+
+                var idx: usize = 0;
+
+                for (item_data.fields, 1..) |fld, i| {
+                    switch (fld) {
+                        .tuple => @panic("todo"),
+                        .field => |f| {
+                            assert(idx < 4096);
+
+                            const written = try std.fmt.bufPrint(
+                                buffer[idx..],
+                                "\t{s}: {},",
+                                .{
+                                    f.name,
+                                    f.type_kind,
+                                },
+                            );
+                            idx += written.len;
+
+                            if (i != item_data.fields.len) idx += (try std.fmt.bufPrint(
+                                buffer[idx..],
+                                "\n",
+                                .{},
+                            )).len;
+                        },
+                    }
+                }
+
+                const fields_str = buffer[0..idx];
+
+                try std.fmt.format(
+                    writer,
+                    "" ++
+                        \\const {s} =  struct {{
+                        \\{s}
+                        \\}};
+                        \\
+                    ,
+
+                    .{ name, fields_str },
+                );
+
+                try std.fmt.format(writer, "\n", .{});
+            },
 
             else => |tag| {
+                if (true) return;
                 const name = self.name orelse unreachable;
                 const item_type = blk: {
                     switch (tag) {
-                        ItemData.object_item, ItemData.module_item => break :blk "struct",
-                        ItemData.enum_item => break :blk "enum",
+                        Data.object_item, Data.module_item => break :blk "struct",
+                        Data.enum_item => break :blk "enum",
                         else => {
                             eprintln("unable to serialize '{s}'", .{@tagName(tag)});
                             unreachable;

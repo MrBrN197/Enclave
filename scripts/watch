@@ -1,0 +1,33 @@
+#! /usr/bin/fish
+
+function clear
+    printf "\e[1;1H\e[J"
+end
+
+
+./scripts/run $argv[1..]
+
+
+while true
+
+    inotifywait --exclude '^.git$' \
+        -e modify \
+        -r ./src ./build.zig &>/dev/null
+
+    if ! test $status -eq 0
+        printf "\e[38;1;mFailed to WatchFiles\e[m\n" >&2
+        exit
+    end
+
+    clear
+
+
+    ./scripts/run $argv[1..]
+
+    set -l cmd_status $status
+    if ! string match -q $cmd_status 0
+        set_color red
+        printf "Failed: with status $cmd_status\n" >&2
+        set_color normal
+    end
+end

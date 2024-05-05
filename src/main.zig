@@ -11,6 +11,9 @@ const assert = std.debug.assert;
 const mem = std.mem;
 const log = std.log;
 
+const as_kb: usize = @shlExact(1, 20);
+const as_mb: usize = @shlExact(1, 30);
+
 var gpa_allocator = std.heap.GeneralPurposeAllocator(.{
     .enable_memory_limit = true,
 }){};
@@ -19,12 +22,14 @@ const gpa = gpa_allocator.allocator();
 pub const std_options = std.Options{ .log_level = .info };
 
 pub fn main() void {
+    gpa_allocator.setRequestedMemoryLimit(as_mb * 256);
+
     var argv = std.process.args();
     assert(argv.skip());
 
     var count: usize = 0;
     while (argv.next()) |filepath| {
-        eprintln("=" ** 30 ++ "'{s}'" ++ "=" ** 30, .{filepath});
+        eprintln("=" ** 20 ++ "'{s}'", .{filepath});
         convert_file(filepath) catch |e| {
             switch (e) {
                 error.FileNotFound => eprintln("File Path Not Found: {s}", .{filepath}),
@@ -45,16 +50,13 @@ pub fn main() void {
         eprintln("error: filepath required", .{});
         std.process.exit(1);
     }
-    std.log.debug("processed {} files", .{count});
+    std.log.info("processed {} files", .{count});
 }
 
 pub fn convert_file(filepath: []const u8) !void {
-    const as_kb: usize = @shlExact(1, 20);
-    const as_mb: usize = @shlExact(1, 30);
+    const buffer = try gpa.alloc(u8, as_kb * 256);
+    defer gpa.free(buffer);
 
-    gpa_allocator.setRequestedMemoryLimit(as_mb * 256);
-
-    const buffer = try gpa.alloc(u8, as_kb * 64);
     const read: []const u8 = try std.fs.cwd().readFile(filepath, buffer);
 
     assert(read.len < buffer.len); // FIX:

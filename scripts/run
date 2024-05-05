@@ -1,3 +1,4 @@
 #! /usr/bin/bash
 
-command zig build run --summary none -- $@
+zig build || exit
+./zig-out/bin/enclaver $@
