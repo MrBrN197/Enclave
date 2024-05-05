@@ -80,7 +80,7 @@ pub const Node = struct {
         // TODO: $visibility_modifier
 
         const name_field = self.get_field_unchecked("name"); //  $_type_identifier
-        const typename = parser.node_to_string(name_field.node, self.allocator);
+        const typename = parser.node_to_string_alloc(name_field.node, self.allocator);
         // TODO: const type_parameters_field = if (self.get_field("type_parameters")) //  $type_parameters
 
         const type_field = self.get_field_unchecked("type"); // $_type
@@ -148,9 +148,16 @@ pub const Node = struct {
                 const item = self.extract_static_item(parser);
                 collect.append(item) catch unreachable;
             },
+            .trait_item => {
+                const item = self.extract_trait_item(parser);
+                collect.append(item) catch unreachable;
+            },
+
+            .function_signature_item => return, // FIX:  comment
 
             .extern_crate_declaration, .attribute_item => return, // TODO
-            .line_comment, .use_declaration => return,
+
+            .block_comment, .line_comment, .use_declaration => return,
             .macro_invocation, .macro_definition => return,
             .empty_statement => return,
 
@@ -265,7 +272,7 @@ pub const Node = struct {
     }
 
     fn extract_type_identifier(self: *const @This(), parser: *const Parser) void {
-        const text = parser.node_to_string(self.node, self.allocator);
+        const text = parser.node_to_string_alloc(self.node, self.allocator);
         _ = text; // autofix
         // out(writer, "{s}", .{text});
     }
@@ -281,7 +288,7 @@ pub const Node = struct {
         assert(self.node_type == .struct_item);
 
         const id_field = self.get_field_unchecked("name"); // $.identifier,
-        const id = parser.node_to_string(id_field.node, self.allocator);
+        const id = parser.node_to_string_alloc(id_field.node, self.allocator);
 
         // if (self.get_field(self, "type_parameters")) ||  // TODO:
 
@@ -298,7 +305,7 @@ pub const Node = struct {
                         .field_declaration => {
                             // $visibility_modifier?,
                             const name_field = decl.get_field_unchecked("name"); //  $_field_identifier
-                            const name = parser.node_to_string(name_field.node, self.allocator);
+                            const name = parser.node_to_string_alloc(name_field.node, self.allocator);
                             const type_field = decl.get_field_unchecked("type"); //  $_type
                             const type_kind = type_field.extract_type_ref(parser);
                             if (type_kind) |ty_kind| {
@@ -393,7 +400,7 @@ pub const Node = struct {
 
         const value_expr = blk: {
             if (self.get_field("value")) |expr_field| { // TODO: _expr
-                const text = parser.node_to_string(expr_field.node, self.allocator);
+                const text = parser.node_to_string_alloc(expr_field.node, self.allocator);
                 break :blk text;
             } else break :blk null;
         };
@@ -422,7 +429,7 @@ pub const Node = struct {
 
         const value_expr = blk: {
             if (self.get_field("value")) |expr_field| { // TODO: _expr
-                const text = parser.node_to_string(expr_field.node, self.allocator);
+                const text = parser.node_to_string_alloc(expr_field.node, self.allocator);
                 break :blk text;
             } else break :blk null;
         };
@@ -436,110 +443,56 @@ pub const Node = struct {
         return result;
     }
 
-    fn extract_macro_definition(self: *const @This(), parser: *const Parser) void {
-        const name_field = self.get_field("name") orelse unreachable;
+    fn extract_trait_item(self: *const @This(), parser: *const Parser) NodeItem {
+        // TODO: $visibility_modifier,
 
-        const name = parser.node_to_string(name_field.node, self.allocator);
-        _ = name; // autofix
+        const name_field = self.get_field_unchecked("name"); // $_type_identifier
+        const name = name_field.extract_type_ref(parser).?;
 
-        if (self.get_field("type_parameters")) |type_parameters_field| {
-            const type_parameters = parser.node_to_string(type_parameters_field.node, self.allocator);
-            _ = type_parameters; // autofix
-            //     out(writer, "Params:\n\t{s}\n", .{type_parameters});
+        var type_constraints = std.ArrayList([]const u8).init(self.allocator);
+
+        if (self.get_field("type_parameters")) |field| { // $type_parameters
+            const text = parser.node_to_string_alloc(field.node, self.allocator);
+            type_constraints.append(text) catch unreachable; // TODO: FIX:
         }
 
-        if (self.get_field("parameters")) |parameters_field| {
-            const parameters = parser.node_to_string(parameters_field.node, self.allocator);
-            _ = parameters; // autofix
-            // out(
-            //     writer,
-            //     "Parameters:\n\t{s}\n",
-            //     .{parameters},
-            // );
+        var annotations = std.ArrayList([]const u8).init(parser.allocator); // FIX:
+        if (self.get_field("bounds")) |r| { // $trait_bounds
+            const text = parser.node_to_string(r.node);
+            annotations.append(text) catch unreachable;
         }
-        if (self.get_field("return_type")) |return_type_field| {
-            const return_type = parser.node_to_string(return_type_field.node, self.allocator);
-            _ = return_type; // autofix
-            // out(
-            //     writer,
-            //     "Return_type:\n\t{s}\n",
-            //     .{return_type},
-            // );
-        }
+
+        // TODO: $where_clause
+
+        const body_field = self.get_field_unchecked("body");
+        var items = std.ArrayList(NodeItem).init(self.allocator);
+
+        body_field.extract_node_items(parser, &items);
+
+        assert(name == .identifier);
+
+        const item_data = NodeItem.Data{ .trait_item = .{
+            .name = name.identifier,
+            .items = items,
+            .constraints = type_constraints,
+        } };
+        var result = NodeItem.init(item_data, name.identifier);
+        result.annotations = annotations; // FIX:
+        return result;
     }
-    fn extract_empty_statement(self: *const @This(), parser: *const Parser) void {
-        const name_field = self.get_field("name") orelse unreachable;
 
-        const name = parser.node_to_string(name_field.node, self.allocator);
-        _ = name; // autofix
-
-        if (self.get_field("type_parameters")) |type_parameters_field| {
-            const type_parameters = parser.node_to_string(type_parameters_field.node, self.allocator);
-            _ = type_parameters; // autofix
-            //     out(writer, "Params:\n\t{s}\n", .{type_parameters});
-        }
-
-        if (self.get_field("parameters")) |parameters_field| {
-            const parameters = parser.node_to_string(parameters_field.node, self.allocator);
-            _ = parameters; // autofix
-            // out(
-            //     writer,
-            //     "Parameters:\n\t{s}\n",
-            //     .{parameters},
-            // );
-        }
-        if (self.get_field("return_type")) |return_type_field| {
-            const return_type = parser.node_to_string(return_type_field.node, self.allocator);
-            _ = return_type; // autofix
-            // out(
-            //     writer,
-            //     "Return_type:\n\t{s}\n",
-            //     .{return_type},
-            // );
-        }
-    }
     fn extract_attribute_item(self: *const @This(), parser: *const Parser) void {
         _ = self; // autofix
         _ = parser; // autofix
         // out(writer, "//", .{});
         // out(writer, "{s}", .{parser.node_to_string(self.node, self.allocator)});
     }
-    fn extract_inner_attribute_item(self: *const @This(), parser: *const Parser) void {
-        const name_field = self.get_field("name") orelse unreachable;
 
-        const name = parser.node_to_string(name_field.node, self.allocator);
-        _ = name; // autofix
-
-        if (self.get_field("type_parameters")) |type_parameters_field| {
-            const type_parameters = parser.node_to_string(type_parameters_field.node, self.allocator);
-            _ = type_parameters; // autofix
-            //     out(writer, "Params:\n\t{s}\n", .{type_parameters});
-        }
-
-        if (self.get_field("parameters")) |parameters_field| {
-            const parameters = parser.node_to_string(parameters_field.node, self.allocator);
-            _ = parameters; // autofix
-            // out(
-            //     writer,
-            //     "Parameters:\n\t{s}\n",
-            //     .{parameters},
-            // );
-        }
-        if (self.get_field("return_type")) |return_type_field| {
-            const return_type = parser.node_to_string(return_type_field.node, self.allocator);
-            _ = return_type; // autofix
-            // out(
-            //     writer,
-            //     "Return_type:\n\t{s}\n",
-            //     .{return_type},
-            // );
-        }
-    }
     fn extract_mod_item(self: *const @This(), parser: *const Parser) NodeItem {
         // TODO: $visibility_modifier
 
         const name_field = self.get_field_unchecked("name");
-        const name = parser.node_to_string(name_field.node, self.allocator);
+        const name = parser.node_to_string_alloc(name_field.node, self.allocator);
 
         const node_items = if (self.get_field("body")) |body_field| blk: { // $declaration_list);
             break :blk body_field.extract_body(parser);
@@ -559,17 +512,17 @@ pub const Node = struct {
     fn extract_foreign_mod_item(self: *const @This(), parser: *const Parser) void {
         const name_field = self.get_field("name") orelse unreachable;
 
-        const name = parser.node_to_string(name_field.node, self.allocator);
+        const name = parser.node_to_string_alloc(name_field.node, self.allocator);
         _ = name; // autofix
 
         if (self.get_field("type_parameters")) |type_parameters_field| {
-            const type_parameters = parser.node_to_string(type_parameters_field.node, self.allocator);
+            const type_parameters = parser.node_to_string_alloc(type_parameters_field.node, self.allocator);
             _ = type_parameters; // autofix
             //     out(writer, "Params:\n\t{s}\n", .{type_parameters});
         }
 
         if (self.get_field("parameters")) |parameters_field| {
-            const parameters = parser.node_to_string(parameters_field.node, self.allocator);
+            const parameters = parser.node_to_string_alloc(parameters_field.node, self.allocator);
             _ = parameters; // autofix
             // out(
             //     writer,
@@ -578,7 +531,7 @@ pub const Node = struct {
             // );
         }
         if (self.get_field("return_type")) |return_type_field| {
-            const return_type = parser.node_to_string(return_type_field.node, self.allocator);
+            const return_type = parser.node_to_string_alloc(return_type_field.node, self.allocator);
             _ = return_type; // autofix
             // out(
             //     writer,
@@ -590,17 +543,17 @@ pub const Node = struct {
     fn extract_union_item(self: *const @This(), parser: *const Parser) void {
         const name_field = self.get_field("name") orelse unreachable;
 
-        const name = parser.node_to_string(name_field.node, self.allocator);
+        const name = parser.node_to_string_alloc(name_field.node, self.allocator);
         _ = name; // autofix
 
         if (self.get_field("type_parameters")) |type_parameters_field| {
-            const type_parameters = parser.node_to_string(type_parameters_field.node, self.allocator);
+            const type_parameters = parser.node_to_string_alloc(type_parameters_field.node, self.allocator);
             _ = type_parameters; // autofix
             //     out(writer, "Params:\n\t{s}\n", .{type_parameters});
         }
 
         if (self.get_field("parameters")) |parameters_field| {
-            const parameters = parser.node_to_string(parameters_field.node, self.allocator);
+            const parameters = parser.node_to_string_alloc(parameters_field.node, self.allocator);
             _ = parameters; // autofix
             // out(
             //     writer,
@@ -609,7 +562,7 @@ pub const Node = struct {
             // );
         }
         if (self.get_field("return_type")) |return_type_field| {
-            const return_type = parser.node_to_string(return_type_field.node, self.allocator);
+            const return_type = parser.node_to_string_alloc(return_type_field.node, self.allocator);
             _ = return_type; // autofix
             // out(
             //     writer,
@@ -621,10 +574,10 @@ pub const Node = struct {
 
     fn extract_extern_crate_declaration(self: *const @This(), parser: *const Parser) void {
         const name_field = self.get_field("name") orelse unreachable;
-        const name = parser.node_to_string(name_field.node, self.allocator);
+        const name = parser.node_to_string_alloc(name_field.node, self.allocator);
 
         if (self.get_field("alias")) |alias_field| {
-            const alias = parser.node_to_string(alias_field.node, self.allocator);
+            const alias = parser.node_to_string_alloc(alias_field.node, self.allocator);
             _ = alias; // autofix
             //     out(writer, "\nconst ", .{});
 
@@ -733,7 +686,7 @@ pub const Node = struct {
                         },
                         .metavariable => unreachable, // $identifier
                         .self, .super, .crate => {
-                            const text = parser.node_to_string(path_field.node, self.allocator); // FIX:
+                            const text = parser.node_to_string_alloc(path_field.node, self.allocator); // FIX:
                             return TypeKind{ .identifier = text };
                         },
                         .scoped_identifier => {
@@ -744,7 +697,7 @@ pub const Node = struct {
                             // TODO: primitives types;
                             // "union"
                             // "default"
-                            const text = parser.node_to_string(path_field.node, self.allocator);
+                            const text = parser.node_to_string_alloc(path_field.node, self.allocator);
                             return TypeKind{ .identifier = text };
                         },
                         .bracketed_type => unreachable,
@@ -800,7 +753,7 @@ pub const Node = struct {
             .primitive_type => {
                 // FIX: test
 
-                const text = parser.node_to_string(self.node, self.allocator);
+                const text = parser.node_to_string_alloc(self.node, self.allocator);
 
                 if (eql(text, "u16")) return .{ .primitive = .u16 };
                 if (eql(text, "u32")) return .{ .primitive = .u32 };
@@ -827,7 +780,7 @@ pub const Node = struct {
                     tag == .shorthand_field_identifier or
                     tag == .type_identifier);
 
-                const text = parser.node_to_string(self.node, self.allocator);
+                const text = parser.node_to_string_alloc(self.node, self.allocator);
                 return TypeKind{ .identifier = text }; // FIX: copy
             },
         }
@@ -839,7 +792,7 @@ pub const Node = struct {
 
         const name_field = self.get_field_unchecked("name");
         assert(eql(name_field.sym, "identifier")); // TODO: $metavariable
-        const name = parser.node_to_string(name_field.node, self.allocator);
+        const name = parser.node_to_string_alloc(name_field.node, self.allocator);
 
         // TODO: if (self.get_field("type_parameters"))
         const parameters_field = self.get_field_unchecked("parameters");
@@ -891,7 +844,7 @@ pub const Node = struct {
 
                     const field_name = "pattern";
                     const tsnode = c.ts_node_child_by_field_name(child.node, field_name.ptr, @truncate(field_name.len));
-                    const text = parser.node_to_string(tsnode, self.allocator);
+                    const text = parser.node_to_string_alloc(tsnode, self.allocator);
 
                     const name: IdentifierKind = blk_name: {
                         if (eql(text, "_")) break :blk_name .discarded;
@@ -910,11 +863,11 @@ pub const Node = struct {
                     const typename = type_field.extract_type_ref(parser);
                     break :blk .{ .pname = name, .ptype = typename };
                 } else if (child.node_type == .self_parameter) {
-                    unreachable;
+                    @panic("todo");
                 } else if (child.node_type == .variadic_parameter) {
-                    unreachable;
+                    @panic("todo");
                 } else { // _type
-                    const text = parser.node_to_string(child.node, self.allocator);
+                    const text = parser.node_to_string_alloc(child.node, self.allocator);
                     if (eql(text, "_")) break :blk .{
                         .pname = IdentifierKind{ .plain = text },
                         .ptype = null,
@@ -941,7 +894,7 @@ pub const Node = struct {
     ) IdentifierKind {
         switch (self.node_type) {
             .identifier => {
-                const source = parser.node_to_string(self.node, self.allocator);
+                const source = parser.node_to_string_alloc(self.node, self.allocator);
                 return IdentifierKind{ .plain = source };
             },
             // _literal_pattern,
@@ -1015,7 +968,7 @@ pub const Node = struct {
         // TODO: $visibility_modifier;
 
         const name_field = self.get_field_unchecked("name");
-        const name = parser.node_to_string(name_field.node, self.allocator);
+        const name = parser.node_to_string_alloc(name_field.node, self.allocator);
 
         // TODO: if (get_field("type_parameters") $type_parameters;
         // TODO: $where_clause;
@@ -1045,7 +998,7 @@ pub const Node = struct {
 
             // TODO: $?visibility_modifier
             const name_field = child.get_field_unchecked("name"); // identifier
-            const name = parser.node_to_string(name_field.node, self.allocator);
+            const name = parser.node_to_string_alloc(name_field.node, self.allocator);
             // TODO: if child.get_field("body" // $field_declaration_list | $ordered_field_declaration_list
 
             // TODO: if child.get_field("value", $_expression?
@@ -1209,7 +1162,7 @@ pub const Node = struct {
 
     fn extract_abstract_type(self: *const @This(), parser: *const Parser) TypeKind {
         if (self.get_field("type_parameters")) |_| {
-            unreachable;
+            @panic("todo");
         }
 
         const trait_field = self.get_field_unchecked("trait");
@@ -1240,7 +1193,7 @@ pub const Node = struct {
         const element = self.get_field("element") orelse unreachable;
 
         if (self.get_field("length")) |length_field| {
-            const length_expression = parser.node_to_string(length_field.node, self.allocator); // FIX:
+            const length_expression = parser.node_to_string_alloc(length_field.node, self.allocator); // FIX:
             return TypeKind{ .array = .{ .length_expr = length_expression } }; // FIX: parseInt
         } else {
             return TypeKind{ .array = .{ .length_expr = null } };

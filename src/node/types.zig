@@ -26,6 +26,7 @@ pub const NodeItem = struct {
     name: ?[]const u8, // TODO: remove
     path: ?[]const u8,
     data: Data,
+    annotations: ?std.ArrayList([]const u8),
 
     pub const Data = union(enum) {
         procedure_item: Procedure,
@@ -35,6 +36,11 @@ pub const NodeItem = struct {
         enum_item: Enum,
         module_item: Module,
         const_item: Constant,
+        trait_item: struct {
+            name: []const u8,
+            items: std.ArrayList(NodeItem),
+            constraints: std.ArrayList([]const u8),
+        },
 
         pub const Constant = struct {
             name: IdentifierKind,
@@ -188,7 +194,7 @@ pub const NodeItem = struct {
             .data = data,
             .name = name,
             .path = null, // TODO:
-
+            .annotations = null, // TODO:
         };
     }
 

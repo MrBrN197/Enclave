@@ -50,12 +50,12 @@ pub const Parser = struct {
 
     pub fn print_source(self: *const Parser, node: c.TSNode) void {
         const start = c.ts_node_start_point(node);
-        const source = self.node_to_string(node, self.allocator); // FIX: clear
+        const source = self.node_to_string_alloc(node, self.allocator); // FIX: clear
 
         const row = start.row + 1;
         const column = start.column + 1;
 
-        std.log.debug(
+        std.debug.print(
             "=" ** 20 ++ " .{[tag]s} " ++ "=" ** 20 ++
                 \\ {[row]}:{[column]}
                 \\ {[source]s}
@@ -85,7 +85,7 @@ pub const Parser = struct {
         return result.items;
     }
 
-    pub fn node_to_string(self: *const Parser, node: c.TSNode, allocator: mem.Allocator) []const u8 {
+    pub fn node_to_string_alloc(self: *const Parser, node: c.TSNode, allocator: mem.Allocator) []const u8 {
         const start = c.ts_node_start_point(node);
         const end = c.ts_node_end_point(node);
         const lines = self.get_text_at(start, end);
@@ -95,6 +95,29 @@ pub const Parser = struct {
             size += slice.len;
         }
         const buffer = allocator.alloc(u8, size) catch unreachable;
+
+        var idx: usize = 0;
+        for (lines) |slice| {
+            std.mem.copyForwards(u8, buffer[idx..], slice);
+            idx += slice.len;
+        }
+
+        assert(idx == size);
+        assert(!mem.eql(u8, "", buffer[0..idx]));
+
+        return buffer[0..idx];
+    }
+
+    pub fn node_to_string(self: *const Parser, node: c.TSNode) []const u8 {
+        const start = c.ts_node_start_point(node);
+        const end = c.ts_node_end_point(node);
+        const lines = self.get_text_at(start, end);
+
+        var size: usize = 0;
+        for (lines) |slice| {
+            size += slice.len;
+        }
+        const buffer = self.allocator.alloc(u8, size) catch unreachable;
 
         var idx: usize = 0;
         for (lines) |slice| {
