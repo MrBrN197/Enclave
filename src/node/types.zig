@@ -5,22 +5,34 @@ const std = @import("std");
 
 const assert = std.debug.assert;
 const fmt = std.fmt;
-const Writer = @TypeOf(std.io.getStdOut().writer());
+const Writer = @TypeOf(std.io.getStdOut().writer()); // FIX:
 
 const is_empty = @import("../root.zig").is_empty;
 
 pub const IdentifierKind = union(enum) {
-    // FIX: disallow keywords
-
-    discarded,
-    /// FIX: '_'
+    discarded, // FIX: '_'
     matched: Pattern,
     plain: []const u8,
     self,
 
+    const Self = @This();
+
     pub const Pattern = struct {
         kind: void,
     };
+
+    pub fn format(self: Self, comptime _: []const u8, _: std.fmt.FormatOptions, writer: Writer) !void {
+        switch (self) {
+            .plain => |name| {
+                return fmt.format(
+                    writer,
+                    "{s}_v", //FIX:
+                    .{name},
+                );
+            },
+            else => return fmt.format(writer, "_", .{}),
+        }
+    }
 };
 
 pub const NodeItem = struct {
@@ -79,16 +91,16 @@ pub const NodeItem = struct {
 
                 const Self = @This();
 
-                pub fn format(self: Self, comptime _: []const u8, _: std.fmt.FormatOptions, writer: Writer) !void {
-                    switch (self.name) {
-                        .plain => |name| {
-                            if (self.typekind) |ty| {
-                                return fmt.format(writer, "{s}: {}", .{ name, ty });
-                            } else { // FIX: unreachable
-                                return fmt.format(writer, "{s}:__", .{name});
-                            }
-                        },
-                        else => return fmt.format(writer, "_", .{}),
+                pub fn format(
+                    self: Self,
+                    comptime _: []const u8,
+                    _: std.fmt.FormatOptions,
+                    writer: Writer,
+                ) !void {
+                    if (self.typekind) |ty| {
+                        return fmt.format(writer, "{}: {}", .{ self.name, ty });
+                    } else { // FIX: unreachable
+                        return fmt.format(writer, "{}:__", .{self.name});
                     }
                 }
             };
@@ -101,7 +113,26 @@ pub const NodeItem = struct {
                     name: []const u8,
                     type_kind: TypeKind,
                 },
+
+                pub fn format(
+                    self: Field,
+                    comptime _: []const u8,
+                    _: std.fmt.FormatOptions,
+                    writer: anytype,
+                ) !void {
+                    switch (self) {
+                        .tuple => @panic("todo"),
+                        .field => |f| {
+                            try std.fmt.format(
+                                writer,
+                                "\t{s}_v: {},", // FIX:
+                                .{ f.name, f.type_kind },
+                            );
+                        },
+                    }
+                }
             };
+
             fields: []Field,
             ordered: bool,
         };
@@ -246,7 +277,11 @@ pub const NodeItem = struct {
             .procedure_item => |data| {
                 const name = self.name orelse unreachable;
                 // TODO: visibility
-                try std.fmt.format(writer, "fn {s}", .{name});
+                try std.fmt.format(
+                    writer,
+                    "fn {s}_f", // FIX:
+                    .{name},
+                );
                 try std.fmt.format(writer, "(", .{});
                 const param_len = data.params.len;
                 for (data.params, 0..) |param, idx| {
@@ -257,7 +292,7 @@ pub const NodeItem = struct {
                 try std.fmt.format(writer, ") ", .{});
 
                 if (data.return_type) |return_type| {
-                    try std.fmt.format(writer, "{s}", .{return_type});
+                    try std.fmt.format(writer, "{}", .{return_type});
                 } else {
                     try std.fmt.format(writer, "void", .{});
                 }
@@ -273,27 +308,15 @@ pub const NodeItem = struct {
                 var idx: usize = 0;
 
                 for (item_data.fields, 1..) |fld, i| {
-                    switch (fld) {
-                        .tuple => @panic("todo"),
-                        .field => |f| {
-                            assert(idx < 4096);
+                    const written = try std.fmt.bufPrint(
+                        buffer[idx..],
+                        "\t{}",
+                        .{fld},
+                    );
+                    idx += written.len;
 
-                            const written = try std.fmt.bufPrint(
-                                buffer[idx..],
-                                "\t{s}: {},",
-                                .{
-                                    f.name,
-                                    f.type_kind,
-                                },
-                            );
-                            idx += written.len;
-
-                            if (i != item_data.fields.len) idx += (try std.fmt.bufPrint(
-                                buffer[idx..],
-                                "\n",
-                                .{},
-                            )).len;
-                        },
+                    if (i != item_data.fields.len) {
+                        idx += (try std.fmt.bufPrint(buffer[idx..], "\n", .{})).len;
                     }
                 }
 
@@ -315,7 +338,7 @@ pub const NodeItem = struct {
             },
 
             else => |tag| {
-                if (true) return;
+                if (true) return; // FIX:
                 const name = self.name orelse unreachable;
                 const item_type = blk: {
                     switch (tag) {
