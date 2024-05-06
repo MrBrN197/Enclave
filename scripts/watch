@@ -5,7 +5,7 @@ function clear
 end
 
 
-./scripts/run $argv[1..]
+./scripts/run $argv[1..] | tee log.zig
 
 
 while true
@@ -22,7 +22,7 @@ while true
     clear
 
 
-    ./scripts/run $argv[1..]
+    ./scripts/run $argv[1..] | tee log.zig
 
     set -l cmd_status $status
     if ! string match -q $cmd_status 0

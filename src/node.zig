@@ -633,9 +633,13 @@ pub const Node = struct {
                 // TODO: $mutable_specifier,
                 const type_field = self.get_field_unchecked("type");
                 const child_type = type_field.extract_type_ref(parser);
-                _ = child_type; // autofix
+
+                const child = self.allocator.create(@TypeOf(child_type)) catch unreachable; // FIX: remove
+
+                child.* = child_type;
+
                 return TypeKind{
-                    .ref = .{ .child = null }, // FIX: parser.get_type(child_type)
+                    .ref = .{ .child = child },
                 };
             },
             .metavariable => {
@@ -1217,16 +1221,28 @@ pub const Node = struct {
     }
 
     fn extract_array_type(self: *const @This(), parser: *const Parser) TypeKind {
-        const element = self.get_field("element") orelse unreachable;
+        const type_field = self.get_field("element") orelse unreachable;
+        const typekind = type_field.extract_type_ref(parser);
+
+        const child = self.allocator.create(@TypeOf(typekind)) catch unreachable; // FIX: remove
+        child.* = typekind;
 
         if (self.get_field("length")) |length_field| {
             const length_expression = parser.node_to_string_alloc(length_field.node, self.allocator); // FIX:
-            return TypeKind{ .array = .{ .length_expr = length_expression } }; // FIX: parseInt
+            return TypeKind{
+                .array = .{
+                    .length_expr = length_expression,
+                    .child = child,
+                },
+            }; // FIX: parseInt
         } else {
-            return TypeKind{ .array = .{ .length_expr = null } };
+            return TypeKind{
+                .array = .{
+                    .length_expr = null,
+                    .child = child,
+                },
+            };
         }
-
-        element.write_to(parser);
     }
 
     fn extract_function_type(self: *const @This(), parser: *const Parser) TypeKind {

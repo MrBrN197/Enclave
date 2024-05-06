@@ -1,14 +1,17 @@
-const eql = @import("../root.zig").eql;
-const eprintln = @import("../root.zig").eprintln;
 const eprint = @import("../root.zig").eprint;
-
+const eprintln = @import("../root.zig").eprintln;
+const eql = @import("../root.zig").eql;
 const std = @import("std");
-const Writer = @TypeOf(std.io.getStdOut().writer());
+
 const assert = std.debug.assert;
+const fmt = std.fmt;
+const Writer = @TypeOf(std.io.getStdOut().writer());
 
 const is_empty = @import("../root.zig").is_empty;
 
 pub const IdentifierKind = union(enum) {
+    // FIX: disallow keywords
+
     discarded,
     /// FIX: '_'
     matched: Pattern,
@@ -77,24 +80,16 @@ pub const NodeItem = struct {
                 const Self = @This();
 
                 pub fn format(self: Self, comptime _: []const u8, _: std.fmt.FormatOptions, writer: Writer) !void {
-                    _ = self; // autofix
-
-                    // FIX:
-                    // if (self.typekind) |ty| {
-                    //     switch (ty) {
-                    //         .tuple => |tuple_types| {
-                    //             for (tuple_types.items, 0) |tuple_type, idx| {
-                    //                 try std.fmt.format(writer, "{s}: {{{s}}}", .{tuple_type});
-                    //                 if (idx != (tuple_types.items.len - 1)) try std.fmt.format(writer, " | ", .{});
-                    //             }
-                    //         },
-                    //         // FIX: unreachable
-                    //         else => return std.fmt.format(writer, "{s}: {{{s}}}", .{ self.name, @tagName(ty) }), // FIX:
-                    //     }
-                    // } else { // FIX: unreachable
-                    //     return std.fmt.format(writer, "{s}", .{self.name});
-                    // }
-                    return std.fmt.format(writer, "_: __", .{});
+                    switch (self.name) {
+                        .plain => |name| {
+                            if (self.typekind) |ty| {
+                                return fmt.format(writer, "{s}: {}", .{ name, ty });
+                            } else { // FIX: unreachable
+                                return fmt.format(writer, "{s}:__", .{name});
+                            }
+                        },
+                        else => return fmt.format(writer, "_", .{}),
+                    }
                 }
             };
         };
@@ -112,7 +107,7 @@ pub const NodeItem = struct {
         };
 
         pub const TypeKind = union(enum) {
-            array: struct { length_expr: ?[]const u8 },
+            array: struct { length_expr: ?[]const u8, child: *const TypeKind },
             dynamic,
             generic: struct {
                 name: []const u8,
@@ -129,8 +124,8 @@ pub const NodeItem = struct {
                 i32,
                 i64,
                 i8,
-                char,
-                str,
+                char, // FIX:
+                str, // FIX:
                 bool,
                 u128,
                 i128,
@@ -152,6 +147,7 @@ pub const NodeItem = struct {
                 writer: anytype,
             ) !void {
                 switch (self) {
+                    .identifier => |id| try fmt.format(writer, "{s}", .{id}),
                     .tuple => |tuple_items| {
                         assert(tuple_items.items.len > 0);
                         try std.fmt.format(writer, "struct {{", .{});
@@ -162,14 +158,26 @@ pub const NodeItem = struct {
                         try std.fmt.format(writer, "}} ", .{});
                     },
                     .primitive => |prim| {
-                        try std.fmt.format(writer, "{s}", .{@tagName(prim)});
+                        switch (prim) {
+                            .char => try std.fmt.format(writer, "u8", .{}),
+                            .str => try std.fmt.format(writer, "[]const u8", .{}),
+                            else => try std.fmt.format(writer, "{s}", .{@tagName(prim)}),
+                        }
+                    },
+                    .array => |array| {
+                        const brackets = array.length_expr orelse "[_]";
+
+                        const typename = array.child;
+
+                        try fmt.format(writer, "{s}{}", .{ brackets, typename.* });
                     },
                     .ref => |ref| {
-                        _ = ref; // autofix
                         // FIX:
-                        try std.fmt.format(writer, "&___", .{});
+                        assert(ref.child != null);
+
+                        try std.fmt.format(writer, "*const {}", .{ref.child.?.*});
                     },
-                    else => return std.fmt.format(writer, "<.{s}>", .{@tagName(self)}),
+                    else => return std.fmt.format(writer, "__{s}_type", .{@tagName(self)}),
                 }
             }
         };
@@ -202,21 +210,19 @@ pub const NodeItem = struct {
     }
 
     pub fn serialize(self: *const NodeItem, writer: Writer) !void {
-        if (true) return; //FIX:
-
         switch (self.data) {
             .module_item => |mod| {
                 assert(self.name != null);
                 const name = self.name.?;
 
                 if (mod.contents) |contents| {
-                    try std.fmt.format(writer, "const {s} = module {{\n", .{name});
+                    try std.fmt.format(writer, "const Module_{s} = struct {{ // Module \n", .{name});
                     for (contents.items) |item| {
                         try item.serialize(writer);
                     }
                     try std.fmt.format(writer, "\n}};", .{});
                 } else {
-                    try std.fmt.format(writer, "mod {s};", .{name});
+                    try std.fmt.format(writer, "const Module_{s} = @import(\"______\");", .{name});
                 }
 
                 try std.fmt.format(writer, "\n", .{});
@@ -227,9 +233,10 @@ pub const NodeItem = struct {
             .const_item => |item_data| {
                 assert(item_data.name == .plain);
                 assert(item_data.value_expr != null);
+
                 const val = item_data.value_expr.?;
 
-                try std.fmt.format(writer, "const {s}: {} = {s};", .{
+                try std.fmt.format(writer, "// const {s}: {} = {s};", .{
                     item_data.name.plain,
                     item_data.type_kind,
                     val,
@@ -255,8 +262,7 @@ pub const NodeItem = struct {
                     try std.fmt.format(writer, "void", .{});
                 }
 
-                // self.to_str(writer); // TODO:
-                try std.fmt.format(writer, "\n", .{});
+                try std.fmt.format(writer, "{{}}\n", .{});
             },
             .object_item => |item_data| {
                 assert(self.name != null);

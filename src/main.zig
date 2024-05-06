@@ -36,7 +36,7 @@ pub fn main() void {
     var count: usize = 0;
     while (argv.next()) |filepath| {
         std.log.info("{s:>50}", .{filepath});
-        const result = convert_file(filepath) catch |e| {
+        const result = extract_items_from_file(filepath) catch |e| {
             switch (e) {
                 error.FileNotFound => std.log.warn("file path not found: {s}", .{filepath}),
                 error.IsDir => std.log.warn("skipping directory name \"{s}\"", .{filepath}),
@@ -66,7 +66,7 @@ const Items = struct {
     node_items: []const NodeItem,
 };
 
-pub fn convert_file(filepath: []const u8) !Items {
+pub fn extract_items_from_file(filepath: []const u8) !Items {
     const filesize = (try std.fs.cwd().statFile(filepath)).size;
 
     const buffer = try gpa.alloc(u8, filesize + 1);
