@@ -4,6 +4,7 @@ const eprintln = @import("./root.zig").eprintln;
 const eql = @import("./root.zig").eql;
 const Node = @import("./node.zig").Node;
 const NodeItem = @import("./node.zig").NodeItem;
+const File = std.fs.File;
 
 const Parser = @import("./parser.zig").Parser;
 const std = @import("std");
@@ -25,33 +26,32 @@ const gpa = gpa_allocator.allocator();
 pub const std_options = std.Options{ .log_level = .info };
 
 pub fn main() void {
-    const stdout = std.io.getStdOut();
-    const writer = stdout.writer();
-
     gpa_allocator.setRequestedMemoryLimit(as_mb * 512);
 
     var argv = std.process.args();
     assert(argv.skip());
 
     var count: usize = 0;
+
+    const suffix = ".zig";
     while (argv.next()) |filepath| {
-        std.log.info("{s:>50}", .{filepath});
-        const result = extract_items_from_file(filepath) catch |e| {
-            switch (e) {
-                error.FileNotFound => std.log.warn("file path not found: {s}", .{filepath}),
-                error.IsDir => std.log.warn("skipping directory name \"{s}\"", .{filepath}),
+        const filepath_len = filepath.len;
+        const buffer = gpa.alloc(u8, filepath_len + suffix.len) catch unreachable;
 
-                else => {
-                    std.log.err("failed to read file {s}", .{filepath});
-                    std.log.err("{s}", .{@errorName(e)});
-                    std.process.exit(@truncate(@intFromError(e))); // FIX:
-                },
-            }
-            continue;
-        };
+        const outfilepath = std.fmt.bufPrint(
+            buffer,
+            "{s}{s}",
+            .{ filepath, suffix },
+        ) catch unreachable;
 
-        for (result.node_items) |item| item.serialize(writer) catch unreachable;
+        std.log.info("{s:>50}\n=> {s:>50}", .{ filepath, outfilepath });
 
+        const outfile = std.fs.cwd().createFile(
+            outfilepath,
+            .{ .exclusive = false },
+        ) catch unreachable; // FIX:
+
+        convert_file(filepath, outfile);
         count += 1;
     }
 
@@ -62,11 +62,29 @@ pub fn main() void {
     std.log.info("processed {} files", .{count});
 }
 
-const Items = struct {
-    node_items: []const NodeItem,
-};
+pub fn convert_file(filepath: []const u8, outfile: File) void {
+    const writer = outfile.writer();
 
-pub fn extract_items_from_file(filepath: []const u8) !Items {
+    const items = extract_items_from_file(filepath) catch |e| {
+        switch (e) {
+            error.FileNotFound => std.log.warn("file path not found: {s}", .{filepath}),
+            error.IsDir => std.log.warn("skipping directory name \"{s}\"", .{filepath}),
+
+            else => {
+                std.log.err("failed to read file {s}", .{filepath});
+                std.log.err("{s}", .{@errorName(e)});
+                std.process.exit(@truncate(@intFromError(e))); // FIX:
+            },
+        }
+        return;
+    };
+
+    for (items) |item| {
+        item.serialize(writer) catch unreachable; // FIX:
+    }
+}
+
+pub fn extract_items_from_file(filepath: []const u8) ![]NodeItem {
     const filesize = (try std.fs.cwd().statFile(filepath)).size;
 
     const buffer = try gpa.alloc(u8, filesize + 1);
@@ -81,5 +99,5 @@ pub fn extract_items_from_file(filepath: []const u8) !Items {
 
     const items = wrapper.parse();
 
-    return .{ .node_items = items };
+    return items;
 }
