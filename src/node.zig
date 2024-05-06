@@ -175,9 +175,14 @@ pub const Node = struct {
                 collect.append(item) catch unreachable;
             },
 
+            .extern_crate_declaration => {
+                const item = self.extract_extern_crate_declaration(parser);
+                collect.append(item) catch unreachable;
+            },
+
             .function_signature_item => {}, // FIX:  comment
 
-            .extern_crate_declaration, .attribute_item => {}, // TODO
+            .attribute_item => {}, // TODO
             .expression_statement => {}, // TODO:
 
             .block_comment, .line_comment, .use_declaration => {},
@@ -534,92 +539,35 @@ pub const Node = struct {
 
         return result;
     }
-    fn extract_foreign_mod_item(self: *const @This(), parser: *const Parser) void {
-        const name_field = self.get_field("name") orelse unreachable;
 
-        const name = parser.node_to_string_alloc(name_field.node, self.allocator);
-        _ = name; // autofix
-
-        if (self.get_field("type_parameters")) |type_parameters_field| {
-            const type_parameters = parser.node_to_string_alloc(type_parameters_field.node, self.allocator);
-            _ = type_parameters; // autofix
-            //     out(writer, "Params:\n\t{s}\n", .{type_parameters});
-        }
-
-        if (self.get_field("parameters")) |parameters_field| {
-            const parameters = parser.node_to_string_alloc(parameters_field.node, self.allocator);
-            _ = parameters; // autofix
-            // out(
-            //     writer,
-            //     "Parameters:\n\t{s}\n",
-            //     .{parameters},
-            // );
-        }
-        if (self.get_field("return_type")) |return_type_field| {
-            const return_type = parser.node_to_string_alloc(return_type_field.node, self.allocator);
-            _ = return_type; // autofix
-            // out(
-            //     writer,
-            //     "Return_type:\n\t{s}\n",
-            //     .{return_type},
-            // );
-        }
-    }
-    fn extract_union_item(self: *const @This(), parser: *const Parser) void {
-        const name_field = self.get_field("name") orelse unreachable;
-
-        const name = parser.node_to_string_alloc(name_field.node, self.allocator);
-        _ = name; // autofix
-
-        if (self.get_field("type_parameters")) |type_parameters_field| {
-            const type_parameters = parser.node_to_string_alloc(type_parameters_field.node, self.allocator);
-            _ = type_parameters; // autofix
-            //     out(writer, "Params:\n\t{s}\n", .{type_parameters});
-        }
-
-        if (self.get_field("parameters")) |parameters_field| {
-            const parameters = parser.node_to_string_alloc(parameters_field.node, self.allocator);
-            _ = parameters; // autofix
-            // out(
-            //     writer,
-            //     "Parameters:\n\t{s}\n",
-            //     .{parameters},
-            // );
-        }
-        if (self.get_field("return_type")) |return_type_field| {
-            const return_type = parser.node_to_string_alloc(return_type_field.node, self.allocator);
-            _ = return_type; // autofix
-            // out(
-            //     writer,
-            //     "Return_type:\n\t{s}\n",
-            //     .{return_type},
-            // );
-        }
+    fn extract_foreign_mod_item(_: *const @This(), _: *const Parser) void {
+        @panic("todo");
     }
 
-    fn extract_extern_crate_declaration(self: *const @This(), parser: *const Parser) void {
-        const name_field = self.get_field("name") orelse unreachable;
-        const name = parser.node_to_string_alloc(name_field.node, self.allocator);
+    fn extract_union_item(_: *const @This(), _: *const Parser) void {
+        @panic("todo");
+    }
 
-        if (self.get_field("alias")) |alias_field| {
-            const alias = parser.node_to_string_alloc(alias_field.node, self.allocator);
-            _ = alias; // autofix
-            //     out(writer, "\nconst ", .{});
+    fn extract_extern_crate_declaration(self: *const @This(), parser: *const Parser) NodeItem {
+        // todo: $visibility_modifier
+        const children = self.get_children_named();
+        _ = children; // autofix
 
-            //     out(writer, "{s}", .{alias});
-            //     out(writer, " = @import(\"", .{});
-            //     out(writer, "{s}", .{name});
-            //     out(writer, "\");", .{});
-        } else {
-            //     out(writer, "const std = @import(\"", .{});
-            for (name) |str| {
-                _ = str; // autofix
-                //         out(writer, "{s}", .{str});
-            }
-            //     out(writer, "\");", .{});
+        const name_field = self.get_field_unchecked("name");
+        const name = name_field.extract_type_ref(parser);
+        assert(name == .identifier);
+
+        if (self.get_field("alias")) |field| {
+            const alias = field.extract_type_ref(parser);
+            assert(alias == .identifier);
+            @panic("todo");
         }
 
-        // out(writer, "\n", .{});
+        const result = NodeItem.init(
+            .{ .module_item = .{ .contents = null } },
+            name.identifier,
+        );
+        return result;
     }
 
     fn extract_type_ref(self: *const @This(), parser: *const Parser) NodeItem.Data.TypeKind {

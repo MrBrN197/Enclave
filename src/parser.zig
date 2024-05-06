@@ -10,6 +10,7 @@ const eprintln = root.eprintln;
 const eprint = root.eprint;
 const mem = std.mem;
 const Node = tsnode.Node;
+const Item = @import("./node/types.zig");
 
 pub const Parser = struct {
     lines_iter: Lines,

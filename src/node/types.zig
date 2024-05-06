@@ -244,6 +244,7 @@ pub const NodeItem = struct {
         switch (self.data) {
             .module_item => |mod| {
                 assert(self.name != null);
+
                 const name = self.name.?;
 
                 if (mod.contents) |contents| {
