@@ -1229,7 +1229,7 @@ pub const Node = struct {
             const children = self.get_children_named();
             for (children.items) |child| {
                 if (child.node_type != .function_modifiers) continue;
-                var buffer = [_]u8{1} ** 10;
+                var buffer = [_]u8{0} ** 10;
                 var fba = std.heap.FixedBufferAllocator.init(&buffer);
                 const allocator = fba.allocator();
 
