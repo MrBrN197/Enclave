@@ -770,7 +770,7 @@ pub const Node = struct {
                 if (type_kind == .identifier) assert(!is_empty(type_kind.identifier));
 
                 break :blk type_kind;
-            } else break :blk null;
+            } else break :blk .none;
         };
 
         // TODO: field('body') //  $.block;

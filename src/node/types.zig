@@ -154,7 +154,7 @@ pub const NodeItem = struct {
 
         pub const Procedure = struct {
             params: []const Param,
-            return_type: ?TypeKind,
+            return_type: TypeKind,
 
             pub const Param = struct {
                 name: IdentifierKind,
@@ -348,11 +348,7 @@ pub const NodeItem = struct {
 
                 try std.fmt.format(writer, ") ", .{});
 
-                if (data.return_type) |return_type| {
-                    try std.fmt.format(writer, "{}", .{return_type});
-                } else {
-                    try std.fmt.format(writer, "void", .{});
-                }
+                try std.fmt.format(writer, "{}", .{data.return_type});
 
                 try std.fmt.format(writer, "{{}}\n", .{});
             },
