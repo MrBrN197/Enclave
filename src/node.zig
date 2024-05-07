@@ -12,6 +12,7 @@ const is_empty = @import("./root.zig").is_empty;
 const Parser = @import("./parser.zig").Parser; // TODO:
 const node_types = @import("./node/types.zig");
 
+const Path = node_types.Path;
 pub const IdentifierKind = node_types.IdentifierKind;
 pub const NodeItem = node_types.NodeItem;
 pub const NodeType = node_types.NodeType;
@@ -180,12 +181,18 @@ pub const Node = struct {
                 collect.append(item) catch unreachable;
             },
 
+            .use_declaration => {
+                const item = self.extract_use_declaration(parser);
+                collect.append(item) catch unreachable;
+            },
+
             .function_signature_item => {}, // FIX:  comment
 
             .attribute_item => {}, // TODO
             .expression_statement => {}, // TODO:
 
-            .block_comment, .line_comment, .use_declaration => {},
+            .block_comment, .line_comment => {},
+
             .macro_invocation, .macro_definition => {},
             .empty_statement => {},
 
@@ -201,13 +208,6 @@ pub const Node = struct {
         }
     }
 
-    pub fn get_source_text(self: *const Node) []const []const u8 {
-        _ = self; // autofix
-
-        const slice = [1][]const u8{""};
-        return &slice;
-    }
-
     pub fn get_field_unchecked(self: *const Node, field_name: []const u8) Node {
         const result = c.ts_node_child_by_field_name(self.node, field_name.ptr, @truncate(field_name.len));
 
@@ -221,15 +221,12 @@ pub const Node = struct {
                     \\   "{s}"
                     \\ Syntax Tree:
                     \\   {s}
-                    \\ Source:
-                    \\   {s}
                     \\ ===============[ERROR]======================
                 ++ "\u{001B}[m",
                 .{
                     field_name,
                     self.sym,
                     c.ts_node_string(self.node)[0..100],
-                    self.get_source_text()[0],
                 },
             );
             unreachable;
@@ -301,17 +298,6 @@ pub const Node = struct {
         }
 
         return children;
-    }
-
-    fn extract_type_identifier(self: *const @This(), parser: *const Parser) void {
-        const text = parser.node_to_string_alloc(self.node, self.allocator);
-        _ = text; // autofix
-        // out(writer, "{s}", .{text});
-    }
-
-    fn extract_arguments(self: *const @This(), parser: *const Parser) void {
-        _ = self; // autofix
-        _ = parser; // autofix
     }
 
     fn extract_struct_item(self: *const @This(), parser: *const Parser) NodeItem {
@@ -1055,90 +1041,274 @@ pub const Node = struct {
         // } else unreachable;
     }
 
-    fn extract_bracketed_type(_: *const @This(), _: *const Parser) void {
-        @panic("todo");
+    fn extract_use_declaration(self: *const @This(), parser: *const Parser) NodeItem {
+        // TODO: visibility_modifier
 
-        // if (eql(self.node_type == .qualified_type)) {
-        //     self.write_to(parser);
-        // } else { // $_type
-        //     self.write_to(parser);
-        // }
-    }
+        const PathParser = struct { // TODO: move
+            parser: *const Parser,
+            root: Node,
 
-    fn extract_use_list(_: *const @This(), _: *const Parser) void {
-        @panic("todo");
-        // const claues = get_children_named(self); // _use_clause
+            allocator: std.mem.Allocator,
 
-        // for (claues.items) |clause| {
-        //     const sym = get_type(clause);
-        //     if (eql(sym, "use_as_clause")) {
-        //         clause.write_to(parser);
-        //     } else if (eql(sym, "use_list")) {
-        //         clause.write_to(parser);
-        //     } else if (eql(sym, "scoped_use_list")) {
-        //         clause.write_to(parser);
-        //     } else if (eql(sym, "use_wildcard")) {
-        //         clause.write_to(parser);
-        //     } else { // _path
-        //         clause.write_to(parser);
-        //     }
-        // }
-    }
-    // fn extract__path(self: *const @This(), parser: *const Parser) void {
-    //     _ = parser; // autofix
-    //     _ = self; // autofix
-    //     //     $.self,
-    //     // alias(choice(...primitiveTypes), $.identifier),
-    //     // $.metavariable,
-    //     // $.super,
-    //     // $.crate,
-    //     // $.identifier,
-    //     // $.scoped_identifier,
-    //     // $._reserved_identifier,
-    // }
+            fn init(
+                parser_: *const Parser,
+                root_node: Node,
+                allocator: std.mem.Allocator,
+            ) @This() {
+                return .{
+                    .allocator = allocator,
+                    .parser = parser_,
+                    .root = root_node,
+                };
+            }
 
-    fn extract_scoped_use_list(_: *const @This(), _: *const Parser) void {
-        @panic("todo");
-        // assert(eql(get_type(self), "scoped_use_list"));
+            fn parse(s: @This()) Path {
+                const component = s.path(s.root);
+                const ptr = s.allocator.create(@TypeOf(component)) catch unreachable;
 
-        // if (self.get_field("path")) |path_field| { // $._path
-        //     path_field.write_to(parser);
-        // }
-        // const list_field = self.get_field("list") orelse unreachable; // $.use_list),
-        // list_field.write_to(parser);
-    }
+                ptr.* = component;
 
-    fn extract_use_declaration(_: *const @This(), _: *const Parser) void {
-        @panic("todo");
-        // const argument_field = self.get_field("argument") orelse unreachable;
+                const result = Path{
+                    .scope = .{
+                        .name = "", // FIX:
+                        .next = ptr,
+                        .alias = null,
+                    },
+                };
 
-        // const use_clause_sym = get_type(argument_field);
+                return result;
+            }
 
-        // const string = c.ts_node_string(self);
-        // _ = string; // autofix
+            pub fn path(s: @This(), node: Node) Path {
+                switch (node.node_type) {
+                    .self => {
+                        return Path{ .scope = .{
+                            .alias = null,
+                            .name = "self",
+                            .next = null,
+                        } };
+                    }, //FIX:
+                    .crate => {
+                        return Path{ .scope = .{
+                            .alias = null,
+                            .name = "crate",
+                            .next = null,
+                        } };
+                    }, //FIX:
+                    .super => {
+                        return Path{ .scope = .{
+                            .name = "super",
+                            .alias = null,
+                            .next = null,
+                        } };
+                    }, // FIX:
 
-        // for ([_][]const u8{
-        //     "crate",
-        //     "identifier",
-        //     "metavariable",
-        //     "scoped_identifier",
-        //     "scoped_use_list",
-        //     "self",
-        //     "super",
-        //     "use_as_clause",
-        //     "use_list",
-        //     "use_wildcard",
-        // }) |sym| {
-        //     assert(eql(sym, use_clause_sym));
-        // }
+                    .scoped_identifier => {
+                        return s.scoped_identifier(node);
+                    },
+                    .use_as_clause => {
+                        return s.use_as_clause(node);
+                    },
+                    .use_list => {
+                        return s.use_list(node);
+                    },
+                    .scoped_use_list => {
+                        return s.scoped_use_list(node);
+                    },
+                    .use_wildcard => {
+                        return s.use_wildcard(node);
+                    },
+                    .identifier => {
+                        // $metavariable | $identifier
+                        const name = node.extract_type_ref(s.parser);
+                        assert(name == .identifier);
 
-        // argument_field.write_to(parser);
+                        return Path{ .scope = .{
+                            .name = name.identifier,
+                            .next = null,
+                            .alias = null,
+                        } };
+                    },
+                    else => {
+                        s.parser.print_source(node.node);
+                        @panic("todo");
+                    },
+                }
+            }
+
+            fn scoped_identifier(s: @This(), node: Node) Path {
+                const name_field = node.get_field_unchecked("name");
+
+                const last_component = blk: {
+                    if (name_field.node_type == .super) {
+                        break :blk Path{ .scope = .{
+                            .name = "super",
+                            .next = null,
+                            .alias = null,
+                        } };
+                    } else {
+                        assert(name_field.node_type == .identifier);
+                        const typekind = name_field.extract_type_ref(s.parser);
+                        const name = typekind.identifier;
+
+                        break :blk Path{ .scope = .{
+                            .name = name,
+                            .next = null,
+                            .alias = null,
+                        } };
+                    }
+                };
+
+                if (node.get_field("path")) |field| {
+                    var path_component = blk: {
+                        switch (field.node_type) {
+                            .bracketed_type => @panic("todo"), // FIX:
+                            .generic_type => @panic("todo"),
+                            else => {
+                                break :blk s.path(field);
+                            },
+                        }
+                    };
+
+                    var next: *Path = &path_component;
+                    while (next.scope.next) |n| next = n;
+
+                    const ptr = s.allocator.create(@TypeOf(last_component)) catch unreachable;
+                    ptr.* = last_component;
+
+                    next.scope.next = ptr;
+                    return path_component;
+                } else return last_component;
+            }
+
+            pub fn use_as_clause(s: @This(), node: Node) Path {
+                const path_field = node.get_field_unchecked("path");
+                var path_component = s.path(path_field);
+
+                var last_component: *Path = &path_component;
+
+                while (last_component.scope.next) |n| {
+                    last_component = n;
+                }
+
+                const alias_field = node.get_field_unchecked("alias");
+                const alias = alias_field.extract_type_ref(s.parser).identifier;
+
+                last_component.scope.alias = alias;
+                return path_component;
+            }
+
+            pub fn use_list(s: @This(), node: Node) Path {
+                const children = node.get_children_named();
+                var collect = std.ArrayList(Path).init(s.allocator);
+
+                for (children.items) |child| {
+                    switch (child.node_type) {
+                        .use_as_clause => {
+                            const path_component = s.use_as_clause(child);
+                            collect.append(path_component) catch unreachable;
+                        },
+                        .use_list => {
+                            const path_component = s.use_list(child);
+                            collect.append(path_component) catch unreachable;
+                        },
+
+                        .scoped_use_list => {
+                            collect.append(s.scoped_use_list(child)) catch unreachable;
+                        },
+                        .use_wildcard => {
+                            collect.append(s.use_wildcard(child)) catch unreachable;
+                        },
+                        .identifier => {
+                            const name = child.extract_type_ref(s.parser);
+                            assert(name == .identifier);
+                            collect.append(Path{ .scope = .{
+                                .name = name.identifier,
+                                .next = null,
+                                .alias = null,
+                            } }) catch unreachable;
+                        },
+                        else => {
+                            const x = s.path(child);
+                            collect.append(x) catch unreachable;
+                        },
+                    }
+                }
+                return Path{
+                    .components = collect,
+                };
+            }
+
+            pub fn scoped_use_list(s: @This(), node: Node) Path {
+                const use_list_field = node.get_field_unchecked("list");
+                const last_components = s.use_list(
+                    use_list_field,
+                );
+
+                if (node.get_field("path")) |field| {
+                    var path_components = s.path(field);
+                    var next = &path_components;
+
+                    while (next.scope.next) |n| next = n;
+
+                    const ptr = s.allocator.create(@TypeOf(last_components)) catch unreachable;
+                    ptr.* = last_components;
+                    next.scope.next = ptr;
+
+                    return path_components;
+                }
+                return last_components;
+            }
+
+            pub fn use_wildcard(s: @This(), node: Node) Path {
+                const children = node.get_children_named();
+                assert(children.items.len == 1);
+                const child = children.items[0];
+
+                var path_component = s.path(child);
+
+                var next: *Path = &path_component;
+
+                while (next.scope.next) |n| {
+                    next = n;
+                }
+
+                const last = Path{
+                    .scope = .{
+                        .name = "*", // FIX:
+                        .next = null,
+                        .alias = null,
+                    },
+                };
+
+                const ptr = s.allocator.create(@TypeOf(last)) catch unreachable;
+
+                ptr.* = last;
+                return path_component;
+            }
+
+            fn extract_bracketed_type(_: *const @This(), _: *const Parser) void {
+                @panic("todo");
+            }
+        };
+
+        const argument = self.get_field_unchecked("argument");
+
+        const path_parser = PathParser.init(parser, argument, self.allocator);
+        const path = path_parser.parse();
+
+        const result = NodeItem.init(
+            .{
+                .import_item = .{ .path = path },
+            },
+            null,
+        );
+
+        return result;
     }
 
     fn extract_abstract_type(self: *const @This(), parser: *const Parser) TypeKind {
-        if (self.get_field("type_parameters")) |_| {
-            @panic("todo");
-        }
+        if (self.get_field("type_parameters")) |_| @panic("todo");
 
         const trait_field = self.get_field_unchecked("trait");
         return switch (trait_field.node_type) {

@@ -23,7 +23,7 @@ var gpa_allocator = std.heap.GeneralPurposeAllocator(.{
 
 const gpa = gpa_allocator.allocator();
 
-pub const std_options = std.Options{ .log_level = .info };
+pub const std_options = std.Options{ .log_level = .warn };
 
 pub fn main() void {
     gpa_allocator.setRequestedMemoryLimit(as_mb * 512);

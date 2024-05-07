@@ -5,6 +5,7 @@ const std = @import("std");
 
 const assert = std.debug.assert;
 const fmt = std.fmt;
+const mem = std.mem;
 const Writer = @TypeOf(std.io.getStdOut().writer()); // FIX:
 
 const is_empty = @import("../root.zig").is_empty;
@@ -35,6 +36,71 @@ pub const IdentifierKind = union(enum) {
     }
 };
 
+pub const Path = union(enum) {
+    scope: struct {
+        name: []const u8,
+        alias: ?[]const u8,
+        next: ?*Path,
+    },
+    components: std.ArrayList(Path),
+
+    const Self = @This();
+
+    const PathData = struct { path: []const u8, last: []const u8 };
+    pub fn collect_paths(
+        self: *const Path,
+        prefix: []const u8,
+        collect: *std.ArrayList(PathData),
+    ) void {
+        switch (self.*) {
+            .scope => |scope| {
+                const name = scope.name;
+                const buffer = collect.allocator.alloc(u8, prefix.len + name.len + 1) catch unreachable;
+                mem.copyForwards(u8, buffer[0..], prefix);
+                mem.copyForwards(u8, buffer[prefix.len..], name);
+                const new_prefix_len = prefix.len + name.len;
+
+                var new_prefix = buffer[0..new_prefix_len];
+
+                if (scope.next) |next| {
+                    if (!eql(new_prefix, "")) {
+                        mem.copyForwards(u8, buffer[new_prefix_len..], ".");
+                        new_prefix = buffer[0..(new_prefix_len + 1)];
+                    }
+                    next.collect_paths(new_prefix, collect);
+                } else {
+                    collect.append(.{
+                        .path = new_prefix,
+                        .last = name,
+                    }) catch unreachable;
+                }
+            },
+            .components => |components| {
+                for (components.items) |*comp| {
+                    comp.collect_paths(prefix, collect);
+                }
+            },
+        }
+    }
+
+    pub fn format(
+        self: *const Self,
+        _: anytype,
+        _: anytype,
+        writer: anytype,
+    ) !void {
+        var paths = std.ArrayList(PathData).init(std.heap.page_allocator); //FIX: HACK: REMOVE
+
+        defer paths.clearAndFree();
+        self.collect_paths("", &paths);
+        for (paths.items) |p| {
+            const last = p.last;
+            const path = p.path;
+            try std.fmt.format(writer, "const {s} = {s}; \n", .{ last, path });
+        }
+    }
+};
+
 pub const NodeItem = struct {
     // TODO: visibility,
 
@@ -57,6 +123,11 @@ pub const NodeItem = struct {
             constraints: std.ArrayList([]const u8),
         },
         type_item: TypeItem,
+        import_item: ImportStatement,
+
+        pub const ImportStatement = struct {
+            path: Path,
+        };
 
         pub const Constant = struct {
             name: IdentifierKind,
@@ -146,25 +217,7 @@ pub const NodeItem = struct {
             identifier: []const u8,
             none,
             no_return: void,
-            primitive: enum {
-                u16,
-                u32,
-                u64,
-                u8,
-                i16,
-                i32,
-                i64,
-                i8,
-                char, // FIX:
-                str, // FIX:
-                bool,
-                u128,
-                i128,
-                isize,
-                usize,
-                f32,
-                f64,
-            }, // FIX:
+            primitive: enum { u16, u32, u64, u8, u128, usize, i16, i32, i64, i8, i128, isize, f32, f64, char, str, bool }, // FIX:
 
             proc: struct { params: ?std.ArrayList(Procedure.Param) },
             ref: struct { child: ?*const TypeKind },
@@ -242,13 +295,16 @@ pub const NodeItem = struct {
 
     pub fn serialize(self: *const NodeItem, writer: Writer) !void {
         switch (self.data) {
+            .import_item => |item_data| {
+                try fmt.format(writer, "{}\n", .{item_data.path});
+            },
             .module_item => |mod| {
                 assert(self.name != null);
 
                 const name = self.name.?;
 
                 if (mod.contents) |contents| {
-                    try std.fmt.format(writer, "const Module_{s} = struct {{ // Module \n", .{name});
+                    try std.fmt.format(writer, "const Module_{s} = struct {{ // Module \n", .{name}); // FIX:
                     for (contents.items) |item| {
                         try item.serialize(writer);
                     }
