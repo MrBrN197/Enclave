@@ -11,7 +11,6 @@ const eprint = root.eprint;
 const eql = root.eql;
 const is_empty = root.is_empty;
 const mem = std.mem;
-
 const Parser = parse.Parser;
 const Writer = @TypeOf(std.io.getStdOut().writer());
 const Allocator = std.mem.Allocator;
@@ -19,8 +18,9 @@ const Allocator = std.mem.Allocator;
 pub const IdentifierKind = node_types.IdentifierKind;
 pub const NodeItem = node_types.NodeItem;
 pub const NodeType = node_types.NodeType;
-pub const Path = node_types.Path;
+pub const ImportPath = node_types.ImportPath;
 pub const PathParser = path.PathParser;
+pub const ImportPathParser = path.ImportPathParser;
 pub const TypeKind = NodeItem.Data.TypeKind;
 
 fn out(writer: Writer, comptime str: []const u8, args: anytype) void {
@@ -711,8 +711,7 @@ pub const Node = struct {
 
                 const children = self.get_children_named();
                 for (children.items) |child| {
-                    const t = child.extract_type_ref(parser);
-                    tuples_types.append(t) catch unreachable;
+                    tuples_types.append(child.extract_type_ref(parser)) catch unreachable;
                 }
 
                 return TypeKind{ .tuple = tuples_types };
@@ -1079,11 +1078,12 @@ pub const Node = struct {
 
         const argument = self.get_field_unchecked("argument");
 
-        const parsed_path = PathParser.init(parser, argument, self.allocator).parse();
+        const importPath = ImportPathParser.init(parser, argument, self.allocator)
+            .parse();
 
         const result = NodeItem.init(
             .{
-                .import_item = .{ .path = parsed_path },
+                .import_item = importPath,
             },
             null,
         );
@@ -1156,7 +1156,7 @@ pub const Node = struct {
         const parameters_field = self.get_field_unchecked("parameters"); // TODO: $parameters
         _ = parameters_field;
 
-        if (self.get_field("return_type")) |_| {} //TODO:  $_type
+        if (self.get_field("return_type")) |_| @panic("todo:"); // FIX: $_type
 
         if (self.get_field("trait")) |field| {
             _ = {

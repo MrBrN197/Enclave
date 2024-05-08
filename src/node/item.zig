@@ -6,15 +6,17 @@ const assert = std.debug.assert;
 const fmt = std.fmt;
 const is_empty = root.is_empty;
 const mem = std.mem;
-const eprintln = std.eprint;
+const eprintln = root.eprintln;
+const PathBuf = path.PathBuf;
 
 pub const IdentifierKind = union(enum) {
     discarded, // FIX: '_'
     matched: Pattern,
     scoped: struct {
-        path: path.Path,
+        path: PathBuf,
         name: []const u8,
     },
+
     self,
     text: []const u8,
 
@@ -33,7 +35,14 @@ pub const IdentifierKind = union(enum) {
                     .{name},
                 );
             },
-            else => return fmt.format(writer, "_", .{}),
+            .scoped => |scoped| {
+                try fmt.format(writer, "{s}.{s}", .{
+                    scoped.path.buffer[0..scoped.path.len],
+                    scoped.name,
+                });
+            },
+
+            else => @panic("todo"),
         }
     }
 };
@@ -60,11 +69,7 @@ pub const NodeItem = struct {
             constraints: std.ArrayList([]const u8),
         },
         type_item: TypeItem,
-        import_item: ImportStatement,
-
-        pub const ImportStatement = struct {
-            path: path.Path,
-        };
+        import_item: path.ImportPath,
 
         pub const Constant = struct {
             name: IdentifierKind,
@@ -240,8 +245,17 @@ pub const NodeItem = struct {
 
     pub fn serialize(self: *const NodeItem, writer: anytype) !void {
         switch (self.data) {
-            .import_item => |item_data| {
-                try fmt.format(writer, "{}\n", .{item_data.path});
+            .import_item => |import_path| {
+                var collect = std.ArrayList([]const u8)
+                    .init(std.heap.page_allocator); //FIX:
+                defer collect.clearAndFree();
+
+                import_path.collect_paths("", &collect);
+
+                for (collect.items) |p| {
+                    const basename = path.ImportPath.basename(p);
+                    try fmt.format(writer, "const {s} = {s};\n", .{ basename, p });
+                }
             },
             .module_item => |mod| {
                 assert(self.name != null);

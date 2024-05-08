@@ -10,7 +10,7 @@ const mem = std.mem;
 const is_empty = @import("../root.zig").is_empty;
 
 pub const NodeItem = @import("./item.zig").NodeItem;
-pub const Path = @import("./path.zig").Path;
+pub const ImportPath = @import("./path.zig").ImportPath;
 pub const IdentifierKind = @import("./item.zig").IdentifierKind;
 
 pub const NodeType = enum {
