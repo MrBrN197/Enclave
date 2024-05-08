@@ -59,7 +59,12 @@ pub fn main() void {
         std.log.err("error: filepath required", .{});
         std.process.exit(1);
     }
-    std.log.info("processed {} files", .{count});
+
+    std.fmt.format(
+        (std.io.getStdOut().writer()),
+        "processed {} files",
+        .{count},
+    ) catch unreachable;
 }
 
 pub fn convert_file(filepath: []const u8, outfile: File) void {
@@ -71,8 +76,7 @@ pub fn convert_file(filepath: []const u8, outfile: File) void {
             error.IsDir => std.log.warn("skipping directory name \"{s}\"", .{filepath}),
 
             else => {
-                std.log.err("failed to read file {s}", .{filepath});
-                std.log.err("{s}", .{@errorName(e)});
+                std.log.err("{s}: failed to read file {s}", .{ filepath, @errorName(e) });
                 std.process.exit(@truncate(@intFromError(e))); // FIX:
             },
         }

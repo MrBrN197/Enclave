@@ -1,25 +1,27 @@
+const c = @import("./c.zig");
+const node_types = @import("./node/types.zig");
+const parse = @import("./parser.zig"); // TODO:
+const root = @import("./root.zig");
 const std = @import("std");
+const path = @import("./node/path.zig");
+
 const assert = std.debug.assert;
+const eprintln = root.eprintln;
+const eprint = root.eprint;
+const eql = root.eql;
+const is_empty = root.is_empty;
 const mem = std.mem;
 
-const c = @import("./c.zig");
+const Parser = parse.Parser;
+const Writer = @TypeOf(std.io.getStdOut().writer());
+const Allocator = std.mem.Allocator;
 
-const eprintln = @import("./root.zig").eprintln;
-const eprint = @import("./root.zig").eprint;
-const eql = @import("./root.zig").eql;
-const is_empty = @import("./root.zig").is_empty;
-
-const Parser = @import("./parser.zig").Parser; // TODO:
-const node_types = @import("./node/types.zig");
-
-const Path = node_types.Path;
 pub const IdentifierKind = node_types.IdentifierKind;
 pub const NodeItem = node_types.NodeItem;
 pub const NodeType = node_types.NodeType;
+pub const Path = node_types.Path;
+pub const PathParser = path.PathParser;
 pub const TypeKind = NodeItem.Data.TypeKind;
-
-const Writer = @TypeOf(std.io.getStdOut().writer());
-const Allocator = std.mem.Allocator;
 
 fn out(writer: Writer, comptime str: []const u8, args: anytype) void {
     return std.fmt.format(writer, str, args) catch unreachable;
@@ -300,6 +302,46 @@ pub const Node = struct {
         return children;
     }
 
+    fn extract_type_parameters(self: *const Node, parser: *const Parser) ?std.ArrayList(TypeKind) {
+        var params = std.ArrayList(TypeKind).init(self.allocator);
+
+        const children = self.get_children_named();
+
+        for (children.items) |child| {
+            if (child.node_type == .attribute_item) @panic("Todo");
+
+            switch (child.node_type) {
+                .lifetime => std.log.info("skipping: lifetime", .{}),
+                .metavariable => @panic("todo:"),
+                .type_identifier => {
+                    const typename = child.extract_type_ref(parser);
+                    params.append(typename) catch unreachable;
+                },
+                .constrained_type_parameter => {
+                    const typename_field = child.get_field_unchecked("left");
+
+                    if (typename_field.node_type == .lifetime) {
+                        @panic("todo");
+                    } else {
+                        assert(typename_field.node_type == .type_identifier); // _type_identifier
+                        const typename = typename_field.extract_type_ref(parser);
+                        params.append(typename) catch unreachable;
+                    }
+                    // field('bounds', $.trait_bounds),
+                },
+                .optional_type_parameter => @panic("todo:"),
+                .const_parameter => @panic("todo:"),
+                else => unreachable,
+            }
+        }
+
+        if (params.items.len == 0) {
+            params.clearAndFree();
+            return null;
+        }
+        return params;
+    }
+
     fn extract_struct_item(self: *const @This(), parser: *const Parser) NodeItem {
         // TODO: if self.get_field("visibility_modifier") ||
 
@@ -308,7 +350,13 @@ pub const Node = struct {
         const id_field = self.get_field_unchecked("name"); // $.identifier,
         const id = parser.node_to_string_alloc(id_field.node, self.allocator);
 
-        // if (self.get_field(self, "type_parameters")) ||  // TODO:
+        const generics: ?std.ArrayList(TypeKind) = blk: {
+            if (self.get_field("type_parameters")) |type_parameters| {
+                const params = type_parameters.extract_type_parameters(parser);
+
+                break :blk params;
+            } else break :blk null;
+        };
 
         var fields = std.ArrayList(NodeItem.Data.Object.Field).init(self.allocator);
         var ordered = false;
@@ -362,7 +410,7 @@ pub const Node = struct {
         const object = NodeItem.Data{
             .object_item = .{
                 .fields = fields.items,
-
+                .generics = generics,
                 .ordered = ordered,
             },
         };
@@ -409,7 +457,7 @@ pub const Node = struct {
 
         const name_ = name_field.extract_type_ref(parser);
         assert(name_ == .identifier);
-        const name = name_.identifier;
+        const name = name_.identifier.text;
 
         const type_field = self.get_field_unchecked("type");
         const type_kind = type_field.extract_type_ref(parser);
@@ -422,7 +470,7 @@ pub const Node = struct {
         };
 
         const item_data = NodeItem.Data{ .const_item = .{
-            .name = IdentifierKind{ .plain = name },
+            .name = IdentifierKind{ .text = name },
             .type_kind = type_kind,
             .value_expr = value_expr,
         } };
@@ -438,7 +486,7 @@ pub const Node = struct {
 
         const name_ = name_field.extract_type_ref(parser);
         assert(name_ == .identifier);
-        const name = name_.identifier;
+        const name = name_.identifier.text;
 
         const type_field = self.get_field_unchecked("type");
         const type_kind = type_field.extract_type_ref(parser);
@@ -451,7 +499,7 @@ pub const Node = struct {
         };
 
         const item_data = NodeItem.Data{ .const_item = .{
-            .name = IdentifierKind{ .plain = name },
+            .name = IdentifierKind{ .text = name },
             .type_kind = type_kind,
             .value_expr = value_expr,
         } };
@@ -488,11 +536,11 @@ pub const Node = struct {
         assert(name == .identifier);
 
         const item_data = NodeItem.Data{ .trait_item = .{
-            .name = name.identifier,
+            .name = name.identifier.text,
             .items = items,
             .constraints = type_constraints,
         } };
-        var result = NodeItem.init(item_data, name.identifier);
+        var result = NodeItem.init(item_data, name.identifier.text);
         result.annotations = annotations; // FIX:
         return result;
     }
@@ -551,12 +599,12 @@ pub const Node = struct {
 
         const result = NodeItem.init(
             .{ .module_item = .{ .contents = null } },
-            name.identifier,
+            name.identifier.text,
         );
         return result;
     }
 
-    fn extract_type_ref(self: *const @This(), parser: *const Parser) NodeItem.Data.TypeKind {
+    pub fn extract_type_ref(self: *const @This(), parser: *const Parser) NodeItem.Data.TypeKind {
         switch (self.node_type) {
             .abstract_type => {
                 const result = self.extract_abstract_type(parser);
@@ -612,7 +660,7 @@ pub const Node = struct {
                                 const child_type_field = child.get_field_unchecked("type");
                                 const child_type = child_type_field.extract_type_ref(parser);
                                 constraints.append(.{
-                                    .name = child_name.identifier,
+                                    .name = child_name.identifier.text,
                                     .type_kind = child_type,
                                 }) catch unreachable;
                             },
@@ -641,37 +689,20 @@ pub const Node = struct {
                 return result;
             },
             .scoped_identifier, .scoped_type_identifier => {
-                const kind: ?TypeKind = if (self.get_field("path")) |path_field| blk: {
-                    switch (path_field.node_type) {
-                        .generic_type => {
-                            const kind = path_field.extract_type_ref(parser);
-                            break :blk kind;
-                        },
-                        .metavariable => unreachable, // $identifier
-                        .self, .super, .crate => {
-                            const text = parser.node_to_string_alloc(path_field.node, self.allocator); // FIX:
-                            return TypeKind{ .identifier = text };
-                        },
-                        .scoped_identifier => {
-                            return path_field.extract_type_ref(parser);
-                        },
-                        .identifier => {
-                            // $reserved_identifier | primitive Types
-                            // TODO: primitives types;
-                            // "union"
-                            // "default"
-                            const text = parser.node_to_string_alloc(path_field.node, self.allocator);
-                            return TypeKind{ .identifier = text };
-                        },
-                        .bracketed_type => unreachable,
-                        else => unreachable,
-                    }
-                } else null;
-                _ = kind; // FIX:  identifier with path;
-
                 const name_field = self.get_field_unchecked("name");
                 const type_kind = name_field.extract_type_ref(parser);
                 assert(type_kind == .identifier);
+                assert(type_kind.identifier == .text);
+
+                if (self.get_field("path")) |path_field| {
+                    const result = PathParser.init(parser, path_field, self.allocator);
+                    const scope = result.parse();
+
+                    return TypeKind{ .identifier = .{ .scoped = .{
+                        .name = type_kind.identifier.text,
+                        .path = scope,
+                    } } };
+                }
 
                 return type_kind;
             },
@@ -744,7 +775,7 @@ pub const Node = struct {
                     tag == .type_identifier);
 
                 const text = parser.node_to_string_alloc(self.node, self.allocator);
-                return TypeKind{ .identifier = text }; // FIX: copy
+                return TypeKind{ .identifier = .{ .text = text } }; // FIX: copy
             },
         }
     }
@@ -757,7 +788,12 @@ pub const Node = struct {
         assert(eql(name_field.sym, "identifier")); // TODO: $metavariable
         const name = parser.node_to_string_alloc(name_field.node, self.allocator);
 
-        // TODO: if (self.get_field("type_parameters"))
+        const generics = blk: {
+            if (self.get_field("type_parameters")) |field| {
+                break :blk field.extract_type_parameters(parser);
+            } else break :blk null;
+        };
+
         const parameters_field = self.get_field_unchecked("parameters");
         const params = parameters_field.extract_parameters(parser);
 
@@ -766,8 +802,6 @@ pub const Node = struct {
         const return_type_kind = blk: {
             if (self.get_field("return_type")) |return_type| {
                 const type_kind = return_type.extract_type_ref(parser);
-
-                if (type_kind == .identifier) assert(!is_empty(type_kind.identifier));
 
                 break :blk type_kind;
             } else break :blk .none;
@@ -779,6 +813,7 @@ pub const Node = struct {
             .procedure_item = .{
                 .params = params.items,
                 .return_type = return_type_kind,
+                .generics = generics,
             },
         };
 
@@ -794,9 +829,7 @@ pub const Node = struct {
 
         const children = self.get_children_named();
         for (children.items) |child| {
-            if (child.node_type == .attribute_item) {
-                unreachable;
-            }
+            if (child.node_type == .attribute_item) unreachable;
 
             const NameType = struct { pname: IdentifierKind, ptype: ?NodeItem.Data.TypeKind };
             const name_type: NameType = blk: {
@@ -809,12 +842,12 @@ pub const Node = struct {
                     const text = parser.node_to_string_alloc(tsnode, self.allocator);
 
                     const name: IdentifierKind = blk_name: {
-                        if (eql(text, "_")) break :blk_name .discarded;
+                        if (eql(text, "_")) break :blk_name .discarded; //FIX:
 
                         const pattern_field = Node.init(tsnode, self.allocator); // ( $_pattern | $self )
 
                         if (pattern_field.node_type == .self) {
-                            break :blk_name IdentifierKind{ .plain = "self" }; // TODO EnumLiteral
+                            break :blk_name IdentifierKind{ .text = "self" }; // TODO EnumLiteral
                         } else {
                             const name = pattern_field.extract_pattern(parser);
                             break :blk_name name;
@@ -832,7 +865,7 @@ pub const Node = struct {
                 } else { // _type
                     const text = parser.node_to_string_alloc(child.node, self.allocator);
                     if (eql(text, "_")) break :blk .{
-                        .pname = IdentifierKind{ .plain = text },
+                        .pname = IdentifierKind{ .text = text },
                         .ptype = null,
                     };
                     // TODO: return extract_type()
@@ -858,7 +891,7 @@ pub const Node = struct {
         switch (self.node_type) {
             .identifier => {
                 const source = parser.node_to_string_alloc(self.node, self.allocator);
-                return IdentifierKind{ .plain = source };
+                return IdentifierKind{ .text = source };
             },
             // _literal_pattern,
             // $.string_literal,
@@ -1044,262 +1077,13 @@ pub const Node = struct {
     fn extract_use_declaration(self: *const @This(), parser: *const Parser) NodeItem {
         // TODO: visibility_modifier
 
-        const PathParser = struct { // TODO: move
-            parser: *const Parser,
-            root: Node,
-
-            allocator: std.mem.Allocator,
-
-            fn init(
-                parser_: *const Parser,
-                root_node: Node,
-                allocator: std.mem.Allocator,
-            ) @This() {
-                return .{
-                    .allocator = allocator,
-                    .parser = parser_,
-                    .root = root_node,
-                };
-            }
-
-            fn parse(s: @This()) Path {
-                const component = s.path(s.root);
-                const ptr = s.allocator.create(@TypeOf(component)) catch unreachable;
-
-                ptr.* = component;
-
-                const result = Path{
-                    .scope = .{
-                        .name = "", // FIX:
-                        .next = ptr,
-                        .alias = null,
-                    },
-                };
-
-                return result;
-            }
-
-            pub fn path(s: @This(), node: Node) Path {
-                switch (node.node_type) {
-                    .self => {
-                        return Path{ .scope = .{
-                            .alias = null,
-                            .name = "self",
-                            .next = null,
-                        } };
-                    }, //FIX:
-                    .crate => {
-                        return Path{ .scope = .{
-                            .alias = null,
-                            .name = "crate",
-                            .next = null,
-                        } };
-                    }, //FIX:
-                    .super => {
-                        return Path{ .scope = .{
-                            .name = "super",
-                            .alias = null,
-                            .next = null,
-                        } };
-                    }, // FIX:
-
-                    .scoped_identifier => {
-                        return s.scoped_identifier(node);
-                    },
-                    .use_as_clause => {
-                        return s.use_as_clause(node);
-                    },
-                    .use_list => {
-                        return s.use_list(node);
-                    },
-                    .scoped_use_list => {
-                        return s.scoped_use_list(node);
-                    },
-                    .use_wildcard => {
-                        return s.use_wildcard(node);
-                    },
-                    .identifier => {
-                        // $metavariable | $identifier
-                        const name = node.extract_type_ref(s.parser);
-                        assert(name == .identifier);
-
-                        return Path{ .scope = .{
-                            .name = name.identifier,
-                            .next = null,
-                            .alias = null,
-                        } };
-                    },
-                    else => {
-                        s.parser.print_source(node.node);
-                        @panic("todo");
-                    },
-                }
-            }
-
-            fn scoped_identifier(s: @This(), node: Node) Path {
-                const name_field = node.get_field_unchecked("name");
-
-                const last_component = blk: {
-                    if (name_field.node_type == .super) {
-                        break :blk Path{ .scope = .{
-                            .name = "super",
-                            .next = null,
-                            .alias = null,
-                        } };
-                    } else {
-                        assert(name_field.node_type == .identifier);
-                        const typekind = name_field.extract_type_ref(s.parser);
-                        const name = typekind.identifier;
-
-                        break :blk Path{ .scope = .{
-                            .name = name,
-                            .next = null,
-                            .alias = null,
-                        } };
-                    }
-                };
-
-                if (node.get_field("path")) |field| {
-                    var path_component = blk: {
-                        switch (field.node_type) {
-                            .bracketed_type => @panic("todo"), // FIX:
-                            .generic_type => @panic("todo"),
-                            else => {
-                                break :blk s.path(field);
-                            },
-                        }
-                    };
-
-                    var next: *Path = &path_component;
-                    while (next.scope.next) |n| next = n;
-
-                    const ptr = s.allocator.create(@TypeOf(last_component)) catch unreachable;
-                    ptr.* = last_component;
-
-                    next.scope.next = ptr;
-                    return path_component;
-                } else return last_component;
-            }
-
-            pub fn use_as_clause(s: @This(), node: Node) Path {
-                const path_field = node.get_field_unchecked("path");
-                var path_component = s.path(path_field);
-
-                var last_component: *Path = &path_component;
-
-                while (last_component.scope.next) |n| {
-                    last_component = n;
-                }
-
-                const alias_field = node.get_field_unchecked("alias");
-                const alias = alias_field.extract_type_ref(s.parser).identifier;
-
-                last_component.scope.alias = alias;
-                return path_component;
-            }
-
-            pub fn use_list(s: @This(), node: Node) Path {
-                const children = node.get_children_named();
-                var collect = std.ArrayList(Path).init(s.allocator);
-
-                for (children.items) |child| {
-                    switch (child.node_type) {
-                        .use_as_clause => {
-                            const path_component = s.use_as_clause(child);
-                            collect.append(path_component) catch unreachable;
-                        },
-                        .use_list => {
-                            const path_component = s.use_list(child);
-                            collect.append(path_component) catch unreachable;
-                        },
-
-                        .scoped_use_list => {
-                            collect.append(s.scoped_use_list(child)) catch unreachable;
-                        },
-                        .use_wildcard => {
-                            collect.append(s.use_wildcard(child)) catch unreachable;
-                        },
-                        .identifier => {
-                            const name = child.extract_type_ref(s.parser);
-                            assert(name == .identifier);
-                            collect.append(Path{ .scope = .{
-                                .name = name.identifier,
-                                .next = null,
-                                .alias = null,
-                            } }) catch unreachable;
-                        },
-                        else => {
-                            const x = s.path(child);
-                            collect.append(x) catch unreachable;
-                        },
-                    }
-                }
-                return Path{
-                    .components = collect,
-                };
-            }
-
-            pub fn scoped_use_list(s: @This(), node: Node) Path {
-                const use_list_field = node.get_field_unchecked("list");
-                const last_components = s.use_list(
-                    use_list_field,
-                );
-
-                if (node.get_field("path")) |field| {
-                    var path_components = s.path(field);
-                    var next = &path_components;
-
-                    while (next.scope.next) |n| next = n;
-
-                    const ptr = s.allocator.create(@TypeOf(last_components)) catch unreachable;
-                    ptr.* = last_components;
-                    next.scope.next = ptr;
-
-                    return path_components;
-                }
-                return last_components;
-            }
-
-            pub fn use_wildcard(s: @This(), node: Node) Path {
-                const children = node.get_children_named();
-                assert(children.items.len == 1);
-                const child = children.items[0];
-
-                var path_component = s.path(child);
-
-                var next: *Path = &path_component;
-
-                while (next.scope.next) |n| {
-                    next = n;
-                }
-
-                const last = Path{
-                    .scope = .{
-                        .name = "*", // FIX:
-                        .next = null,
-                        .alias = null,
-                    },
-                };
-
-                const ptr = s.allocator.create(@TypeOf(last)) catch unreachable;
-
-                ptr.* = last;
-                return path_component;
-            }
-
-            fn extract_bracketed_type(_: *const @This(), _: *const Parser) void {
-                @panic("todo");
-            }
-        };
-
         const argument = self.get_field_unchecked("argument");
 
-        const path_parser = PathParser.init(parser, argument, self.allocator);
-        const path = path_parser.parse();
+        const parsed_path = PathParser.init(parser, argument, self.allocator).parse();
 
         const result = NodeItem.init(
             .{
-                .import_item = .{ .path = path },
+                .import_item = .{ .path = parsed_path },
             },
             null,
         );
@@ -1377,15 +1161,15 @@ pub const Node = struct {
         if (self.get_field("trait")) |field| {
             _ = {
                 if (field.node_type == .scoped_type_identifier) {
-                    unreachable;
+                    @panic("todo"); // FIX:
                 } else {
                     assert(field.node_type == .type_identifier);
                     const typekind = field.extract_type_ref(parser);
                     assert(typekind == .identifier);
 
-                    assert(eql(typekind.identifier, "Fn") or
-                        eql(typekind.identifier, "FnOnce") or
-                        eql(typekind.identifier, "FnMut"));
+                    assert(eql(typekind.identifier.text, "Fn") or
+                        eql(typekind.identifier.text, "FnOnce") or
+                        eql(typekind.identifier.text, "FnMut"));
                 }
             };
 
