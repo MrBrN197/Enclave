@@ -11,27 +11,22 @@ const PathBuf = path.PathBuf;
 
 pub const IdentifierKind = union(enum) {
     discarded, // FIX: '_'
-    matched: Pattern,
+    matched: []const u8, // FIX:
     scoped: struct {
         path: PathBuf,
         name: []const u8,
     },
-
     self,
     text: []const u8,
 
     const Self = @This();
-
-    pub const Pattern = struct {
-        kind: void,
-    };
 
     pub fn format(self: Self, comptime _: []const u8, _: fmt.FormatOptions, writer: anytype) !void {
         switch (self) {
             .text => |name| {
                 return fmt.format(
                     writer,
-                    "{s}_", //FIX:
+                    "{s}", //FIX:
                     .{name},
                 );
             },
@@ -42,7 +37,12 @@ pub const IdentifierKind = union(enum) {
                 });
             },
 
-            else => @panic("todo"),
+            .discarded => try fmt.format(writer, "_", .{}),
+            .matched => |matched| try fmt.format(writer, "{s}", .{matched}),
+            else => |tag| {
+                eprintln("\n\ntext: `{s}`\n\n", .{@tagName(tag)});
+                @panic("todo");
+            },
         }
     }
 };
@@ -100,21 +100,23 @@ pub const NodeItem = struct {
             generics: ?std.ArrayList(TypeKind),
 
             pub const Param = struct {
-                name: IdentifierKind,
+                name: ?IdentifierKind,
                 typekind: ?TypeKind,
 
                 const Self = @This();
-
                 pub fn format(
                     self: Self,
                     comptime _: []const u8,
                     _: fmt.FormatOptions,
                     writer: anytype,
                 ) !void {
-                    if (self.typekind) |ty| {
-                        return fmt.format(writer, "{}: {}", .{ self.name, ty });
-                    } else { // FIX: unreachable
-                        return fmt.format(writer, "{}:__", .{self.name});
+                    assert(self.typekind != null);
+                    const ty = self.typekind.?;
+
+                    if (self.name) |name| {
+                        return fmt.format(writer, "{}: {}", .{ name, ty });
+                    } else {
+                        return fmt.format(writer, "{}", .{ty});
                     }
                 }
             };
@@ -143,7 +145,7 @@ pub const NodeItem = struct {
                         .field => |f| {
                             try fmt.format(
                                 writer,
-                                "\t{s}_v: {},", // FIX:
+                                "\t{s}: {},", // FIX:
                                 .{ f.name, f.type_kind },
                             );
                         },
@@ -162,13 +164,15 @@ pub const NodeItem = struct {
             none,
             no_return: void,
             primitive: enum { u16, u32, u64, u8, u128, usize, i16, i32, i64, i8, i128, isize, f32, f64, char, str, bool }, // FIX:
-            proc: struct { params: ?std.ArrayList(Procedure.Param) }, // FIX:
+            proc: struct {
+                params: ?std.ArrayList(Procedure.Param),
+                return_type: ?*const TypeKind,
+            },
             ref: struct { child: ?*const TypeKind },
             tuple: std.ArrayList(TypeKind),
 
-            const Self = @This();
             pub fn format(
-                self: Self,
+                self: TypeKind,
                 comptime _: []const u8,
                 _: fmt.FormatOptions,
                 writer: anytype,
@@ -301,7 +305,7 @@ pub const NodeItem = struct {
                 }
                 try fmt.format(
                     writer,
-                    "fn {s}_", // FIX:
+                    "fn {s}", // FIX:
                     .{name},
                 );
                 try fmt.format(writer, "(", .{});
@@ -311,13 +315,17 @@ pub const NodeItem = struct {
 
                 try fmt.format(writer, "{} {{\n", .{data.return_type});
 
-                for (data.params) |param| try fmt.format(
-                    writer,
-                    \\    _ = {}; // autofix todo:
-                    \\
-                ,
-                    .{param.name},
-                );
+                for (data.params) |param| {
+                    if (param.name) |n| {
+                        try fmt.format(
+                            writer,
+                            \\    _ = {}; // autofix todo:
+                            \\
+                        ,
+                            .{n},
+                        );
+                    }
+                }
                 try fmt.format(
                     writer,
 

@@ -830,7 +830,7 @@ pub const Node = struct {
         for (children.items) |child| {
             if (child.node_type == .attribute_item) unreachable;
 
-            const NameType = struct { pname: IdentifierKind, ptype: ?NodeItem.Data.TypeKind };
+            const NameType = struct { pname: ?IdentifierKind, ptype: ?NodeItem.Data.TypeKind };
             const name_type: NameType = blk: {
                 if (child.node_type == .parameter) {
 
@@ -863,12 +863,17 @@ pub const Node = struct {
                     @panic("todo");
                 } else { // _type
                     const text = parser.node_to_string_alloc(child.node, self.allocator);
+
                     if (eql(text, "_")) break :blk .{
                         .pname = IdentifierKind{ .text = text },
                         .ptype = null,
-                    };
-                    // TODO: return extract_type()
-                    unreachable;
+                    } else {
+                        const typekind = child.extract_type_ref(parser);
+                        break :blk .{
+                            .ptype = typekind,
+                            .pname = null,
+                        };
+                    }
                 }
             };
 
@@ -927,8 +932,11 @@ pub const Node = struct {
                             _ = inner;
                             @panic("todo");
                         }
+
+                        const text = parser.node_to_string(field.node);
+
                         const result = IdentifierKind{
-                            .matched = .{ .kind = {} }, // FIX:
+                            .matched = text, // FIX:
                         };
                         return result;
                     } else {
@@ -1154,13 +1162,24 @@ pub const Node = struct {
         // var params = std.ArrayList(NodeItem.ItemData.Procedure.Param).init(self.allocator);
 
         const parameters_field = self.get_field_unchecked("parameters"); // TODO: $parameters
-        _ = parameters_field;
+        const params = parameters_field.extract_parameters(parser);
 
-        if (self.get_field("return_type")) |_| @panic("todo:"); // FIX: $_type
+        const return_type = blk: {
+            if (self.get_field("return_type")) |return_type_field| {
+                const typekind = return_type_field.extract_type_ref(parser);
+                const return_type_ptr = self.allocator.create(@TypeOf(typekind)) catch unreachable;
+                return_type_ptr.* = typekind;
+
+                break :blk return_type_ptr;
+
+                // FIX: $_type
+            } else break :blk null;
+        };
 
         if (self.get_field("trait")) |field| {
             _ = {
                 if (field.node_type == .scoped_type_identifier) {
+                    // const scoped_path = PathParser.init(parser, field, self.allocator);
                     @panic("todo"); // FIX:
                 } else {
                     assert(field.node_type == .type_identifier);
@@ -1175,7 +1194,8 @@ pub const Node = struct {
 
             const result = TypeKind{
                 .proc = .{
-                    .params = null, // FIX:
+                    .params = params,
+                    .return_type = return_type,
                 },
             };
             return result;
@@ -1202,8 +1222,8 @@ pub const Node = struct {
             }
             const result = TypeKind{
                 .proc = .{
-                    .params = null, // FIX:
-
+                    .params = params, // FIX:
+                    .return_type = return_type,
                 },
             };
             return result;

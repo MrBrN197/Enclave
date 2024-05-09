@@ -51,7 +51,8 @@ pub fn main() void {
             .{ .exclusive = false },
         ) catch unreachable; // FIX:
 
-        convert_file(filepath, outfile);
+        convert_file(filepath, outfile.writer());
+        // convert_file(filepath, (std.io.getStdOut().writer()));
         count += 1;
     }
 
@@ -67,9 +68,7 @@ pub fn main() void {
     ) catch unreachable;
 }
 
-pub fn convert_file(filepath: []const u8, outfile: File) void {
-    const writer = outfile.writer();
-
+pub fn convert_file(filepath: []const u8, writer: anytype) void {
     const items = extract_items_from_file(filepath) catch |e| {
         switch (e) {
             error.FileNotFound => std.log.warn("file path not found: {s}", .{filepath}),
