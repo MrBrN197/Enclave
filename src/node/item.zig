@@ -285,17 +285,14 @@ pub const NodeItem = struct {
     pub fn serialize(self: *const NodeItem, writer: anytype) !void {
         switch (self.data) {
             .import_item => |import| {
-                _ = import; // autofix
-                // var collect = std.ArrayList([]const u8)
-                //     .init(std.heap.page_allocator); //FIX:
-                // defer collect.clearAndFree(); // FIX:
-
-                // import.path.collect_paths("", &collect);
-
-                // for (collect.items) |p| {
-                //     const basename = path.ImportPath.basename(p);
-                //     try fmt.format(writer, "const {s} = {s};\n", .{ basename, p });
-                // }
+                for (import.import_paths.items) |p| {
+                    const basename = ImportPath.basename(p.str());
+                    if (root.eql(basename, "*")) {
+                        std.log.warn("todo: path {s}", .{p.str()});
+                        continue;
+                    }
+                    try fmt.format(writer, "const {s} = {s};\n", .{ basename, p.str() });
+                }
             },
             .module_item => |mod| {
                 assert(self.name != null);

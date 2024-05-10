@@ -213,7 +213,6 @@ pub const ImportPathParser = struct {
         };
 
         import_path.collect_paths("", collect);
-        for (collect.items) |p| std.log.warn("path: {s}", .{p.str()});
     }
 
     pub fn path(self: Self, node: Node) ImportPath { // FIX: remove self
