@@ -1,4 +1,5 @@
 #! /usr/bin/bash
 
-zig build || exit
+zig build  -freference-trace --prominent-compile-errors || exit
+
 ./zig-out/bin/enclaver $@

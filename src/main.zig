@@ -26,81 +26,68 @@ const gpa = gpa_allocator.allocator();
 pub const std_options = std.Options{ .log_level = .warn };
 
 pub fn main() void {
-    gpa_allocator.setRequestedMemoryLimit(as_mb * 512);
+    gpa_allocator.setRequestedMemoryLimit(as_mb * 256);
 
     var argv = std.process.args();
     assert(argv.skip());
 
     var count: usize = 0;
 
-    const suffix = ".zig";
+    // const suffix = ".zig";
+    var filepaths = std.ArrayList([]const u8).init(gpa);
+
     while (argv.next()) |filepath| {
-        const filepath_len = filepath.len;
-        const buffer = gpa.alloc(u8, filepath_len + suffix.len) catch unreachable;
+        filepaths.append(filepath) catch unreachable;
+        // const filepath_len = filepath.len;
+        // const buffer = gpa.alloc(u8, filepath_len + suffix.len) catch unreachable;
 
-        const outfilepath = std.fmt.bufPrint(
-            buffer,
-            "{s}{s}",
-            .{ filepath, suffix },
-        ) catch unreachable;
-
-        std.log.info("{s:>50}\n=> {s:>50}", .{ filepath, outfilepath });
-
-        const outfile = std.fs.cwd().createFile(
-            outfilepath,
-            .{ .exclusive = false },
-        ) catch unreachable; // FIX:
-
-        convert_file(filepath, outfile.writer());
-        // convert_file(filepath, (std.io.getStdOut().writer()));
         count += 1;
     }
+
+    convert_file(filepaths.items, (std.io.getStdOut().writer()));
+
+    // const outfilepath = std.fmt.bufPrint(
+    //     buffer,
+    //     "{s}{s}",
+    //     .{ filepath, suffix },
+    // ) catch unreachable;
+
+    // std.log.info("{s:>50}\n=> {s:>50}", .{ filepath, outfilepath });
+
+    // const outfile = std.fs.cwd().createFile(
+    //     outfilepath,
+    //     .{ .exclusive = false },
+    // ) catch unreachable; // FIX:
+
+    // convert_file(filepath, outfile.writer());
+    // // convert_file(filepath, (std.io.getStdOut().writer()));
 
     if (count == 0) {
         std.log.err("error: filepath required", .{});
         std.process.exit(1);
     }
 
-    std.fmt.format(
-        (std.io.getStdOut().writer()),
-        "processed {} files",
-        .{count},
-    ) catch unreachable;
+    std.log.info("processed {} files", .{count});
 }
 
-pub fn convert_file(filepath: []const u8, writer: anytype) void {
-    const items = extract_items_from_file(filepath) catch |e| {
+pub fn convert_file(filepaths: []const []const u8, writer: anytype) void {
+    const parse_results = Parser.parseFiles(gpa, filepaths) catch |e| {
         switch (e) {
-            error.FileNotFound => std.log.warn("file path not found: {s}", .{filepath}),
-            error.IsDir => std.log.warn("skipping directory name \"{s}\"", .{filepath}),
+            error.FileNotFound => std.log.warn("file path not found: {s}", .{filepaths}),
+            error.IsDir => std.log.warn("skipping directory name \"{s}\"", .{filepaths}),
 
             else => {
-                std.log.err("{s}: failed to read file {s}", .{ filepath, @errorName(e) });
+                std.log.err("{s}: failed to read file {s}", .{ filepaths, @errorName(e) });
                 std.process.exit(@truncate(@intFromError(e))); // FIX:
             },
         }
         return;
     };
 
-    for (items) |item| {
-        item.serialize(writer) catch unreachable; // FIX:
+    for (parse_results.items) |parse_result| {
+        std.log.info("Item: filepath: {s}", .{parse_result.filepath});
+        for (parse_result.parserd_module.module.items.items) |item| {
+            item.serialize(writer) catch unreachable;
+        }
     }
-}
-
-pub fn extract_items_from_file(filepath: []const u8) ![]NodeItem {
-    const filesize = (try std.fs.cwd().statFile(filepath)).size;
-
-    const buffer = try gpa.alloc(u8, filesize + 1);
-    defer gpa.free(buffer);
-
-    const read: []const u8 = try std.fs.cwd().readFile(filepath, buffer);
-
-    assert(read.len == (buffer.len - 1));
-
-    var wrapper = Parser.init(read, gpa);
-    defer wrapper.deinit();
-
-    const items = wrapper.parse();
-
-    return items;
 }

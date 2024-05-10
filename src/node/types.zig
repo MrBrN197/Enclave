@@ -13,6 +13,8 @@ pub const NodeItem = @import("./item.zig").NodeItem;
 pub const ImportPath = @import("./path.zig").ImportPath;
 pub const IdentifierKind = @import("./item.zig").IdentifierKind;
 
+pub const Module = NodeItem.Data.Module;
+
 pub const NodeType = enum {
     abstract_type,
     arguments,

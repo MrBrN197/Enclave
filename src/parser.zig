@@ -11,6 +11,7 @@ const eprint = root.eprint;
 const mem = std.mem;
 const Node = tsnode.Node;
 const Item = @import("./node/types.zig");
+const Module = @import("./node/types.zig").Module;
 
 pub const Parser = struct {
     lines_iter: Lines,
@@ -18,6 +19,7 @@ pub const Parser = struct {
     tree: ?*c.TSTree,
     allocator: mem.Allocator,
 
+    const Self = @This();
     const Lines = mem.SplitIterator(u8, .scalar);
 
     pub fn init(source_code: []const u8, allocator: mem.Allocator) @This() {
@@ -70,20 +72,68 @@ pub const Parser = struct {
         return;
     }
 
-    const Self = @This();
-    pub fn parse(self: *const Self) [](NodeItem) {
-        var lines = self.lines_iter;
-        lines.reset(); //TODO:
+    const ParseResult = struct {
+        parserd_module: ParsedModule,
+        filepath: []const u8,
+    };
 
-        var result = std.ArrayList(NodeItem).init(self.allocator);
+    pub fn parseFiles(allocator: std.mem.Allocator, filepaths: []const []const u8) !std.ArrayList(ParseResult) {
+        var results = std.ArrayList(ParseResult).init(allocator);
+
+        for (filepaths) |filepath| {
+            std.log.err("filePath: {s}", .{filepath});
+            const filesize = (std.fs.cwd().statFile(filepath) catch unreachable).size;
+
+            const buffer = allocator.alloc(u8, filesize + 1) catch unreachable;
+            defer allocator.free(buffer);
+
+            const read: []const u8 = std.fs.cwd().readFile(filepath, buffer) catch unreachable;
+
+            assert(read.len == (buffer.len - 1));
+            const parser = Parser.init(read, allocator);
+
+            const parsed_module = parser.parse();
+            // defer parser.deinit(); // FIX:
+
+            results.append(ParseResult{
+                .parserd_module = parsed_module.*,
+                .filepath = filepath,
+            }) catch unreachable;
+        }
+
+        return results;
+    }
+
+    const ParsedModule = struct {
+        module: Module,
+    };
+
+    pub fn parse(
+        self: *const Self,
+    ) *ParsedModule {
+        var lines = self.lines_iter;
+        lines.reset();
+
         const root_node = c.ts_tree_root_node(self.tree);
         assert(!c.ts_node_is_null(root_node));
 
-        const current_node = Node.init(root_node, self.allocator);
+        var collect = std.ArrayList(NodeItem).init(self.allocator);
+        const ctx = .{
+            .modules = &[_]Module{},
+            .parser = self,
+            .items = &collect,
+        };
 
-        current_node.extract_node_items(self, &result);
+        var current_node = Node.init_with_context(self.allocator, root_node, ctx);
 
-        return result.items;
+        // const module = current_node.extract_node_items();
+        const result = current_node.extract_module();
+
+        const ptr = self.allocator.create(ParsedModule) catch unreachable;
+        ptr.* = .{
+            .module = result,
+        };
+        return ptr;
     }
 
     pub fn node_to_string_alloc(self: *const Parser, node: c.TSNode, allocator: mem.Allocator) []const u8 {

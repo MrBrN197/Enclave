@@ -12,7 +12,7 @@ while true
 
     inotifywait --exclude '^.git$' \
         -e modify \
-        -r ./src ./build.zig &>/dev/null
+        -r ./examples ./src ./build.zig &>/dev/null
 
     if ! test $status -eq 0
         printf "\e[38;1;mFailed to WatchFiles\e[m\n" >&2

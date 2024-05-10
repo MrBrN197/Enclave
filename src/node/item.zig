@@ -8,16 +8,17 @@ const is_empty = root.is_empty;
 const mem = std.mem;
 const eprintln = root.eprintln;
 const PathBuf = path.PathBuf;
+const ImportPath = path.ImportPath;
 
 pub const IdentifierKind = union(enum) {
     discarded, // FIX: '_'
-    matched: []const u8, // FIX:
+    matched: []const u8, // TODO:
     scoped: struct {
         path: PathBuf,
         name: []const u8,
     },
     self,
-    text: []const u8,
+    text: []const u8, // TODO: remove
 
     const Self = @This();
 
@@ -26,7 +27,7 @@ pub const IdentifierKind = union(enum) {
             .text => |name| {
                 return fmt.format(
                     writer,
-                    "{s}", //FIX:
+                    "{s}",
                     .{name},
                 );
             },
@@ -54,7 +55,6 @@ pub const NodeItem = struct {
     annotations: ?std.ArrayList([]const u8),
     data: Data,
     name: ?[]const u8, // TODO: remove
-    path: ?[]const u8,
 
     pub const Data = union(enum) {
         const_item: Constant,
@@ -65,11 +65,29 @@ pub const NodeItem = struct {
         procedure_item: Procedure,
         trait_item: struct {
             name: []const u8,
-            items: std.ArrayList(NodeItem),
+            inner_module: Module,
             constraints: std.ArrayList([]const u8),
         },
         type_item: TypeItem,
-        import_item: path.ImportPath,
+        import_item: Import,
+
+        pub const Import = struct {
+            const Self = @This();
+
+            path: ImportPath,
+            ctx: struct {
+                modules: []const Module,
+            },
+
+            pub fn init(modules: []const Module, import_path: ImportPath) Self {
+                return Self{
+                    .ctx = .{
+                        .modules = modules,
+                    },
+                    .path = import_path,
+                };
+            }
+        };
 
         pub const Constant = struct {
             name: IdentifierKind,
@@ -83,7 +101,21 @@ pub const NodeItem = struct {
         };
 
         pub const Module = struct {
-            contents: ?std.ArrayList(NodeItem), // TODO:
+            const Item = NodeItem;
+
+            items: std.ArrayList(NodeItem),
+
+            const Self = @This();
+
+            pub fn init(allocator: std.mem.Allocator) Self {
+                return .{
+                    .items = std.ArrayList(Item).init(allocator),
+                };
+            }
+
+            pub fn insertItem(self: *Self, item: Item) void {
+                self.items.append(item) catch unreachable;
+            }
         };
 
         pub const Enum = struct {
@@ -91,6 +123,18 @@ pub const NodeItem = struct {
 
             pub const Variant = struct {
                 name: []const u8,
+                // typekind: TypeKind, //TODO:
+
+                const Self = @This();
+
+                pub fn format(
+                    self: Self,
+                    comptime _: []const u8,
+                    _: fmt.FormatOptions,
+                    writer: anytype,
+                ) !void {
+                    return fmt.format(writer, "{s}", .{self.name}); //FIX:
+                }
             };
         };
 
@@ -242,19 +286,25 @@ pub const NodeItem = struct {
         return NodeItem{
             .data = data,
             .name = name,
-            .path = null, // TODO:
             .annotations = null, // TODO:
         };
+    }
+    pub fn initAlloc(allocator: std.mem.Allocator, data: Data, name: ?[]const u8) std.mem.Allocator.Error!*NodeItem {
+        const node = NodeItem.init(data, name);
+
+        const ptr = try allocator.create(NodeItem);
+        ptr.* = node;
+        return ptr;
     }
 
     pub fn serialize(self: *const NodeItem, writer: anytype) !void {
         switch (self.data) {
-            .import_item => |import_path| {
+            .import_item => |import| {
                 var collect = std.ArrayList([]const u8)
                     .init(std.heap.page_allocator); //FIX:
-                defer collect.clearAndFree();
+                // defer collect.clearAndFree(); // FIX:
 
-                import_path.collect_paths("", &collect);
+                import.path.collect_paths("", &collect);
 
                 for (collect.items) |p| {
                     const basename = path.ImportPath.basename(p);
@@ -266,14 +316,12 @@ pub const NodeItem = struct {
 
                 const name = self.name.?;
 
-                if (mod.contents) |contents| {
+                if (mod.items.items.len > 0) {
                     try fmt.format(writer, "const {s} = struct {{ // TODO: Module  \n", .{name}); // FIX:
-                    for (contents.items) |item| {
-                        try item.serialize(writer);
-                    }
+                    for (mod.items.items) |item| try item.serialize(writer);
                     try fmt.format(writer, "\n}};", .{});
                 } else {
-                    try fmt.format(writer, "const {s} = @import(\"______\");", .{name});
+                    try fmt.format(writer, "const {s} = @import(\"{s}\");", .{ name, name });
                 }
 
                 try fmt.format(writer, "\n", .{});
@@ -287,7 +335,7 @@ pub const NodeItem = struct {
 
                 const val = item_data.value_expr.?;
 
-                try fmt.format(writer, "// const {s}: {} = {s};", .{
+                try fmt.format(writer, "const {s}: {} = undefined; // FIX: \n// {s};", .{
                     item_data.name.text,
                     item_data.type_kind,
                     val,
@@ -366,7 +414,7 @@ pub const NodeItem = struct {
                 try fmt.format(
                     writer,
                     "" ++
-                        \\const {s} =  struct {{
+                        \\const {s} = struct {{
                         \\{s}
                         \\}};
                         \\
@@ -377,22 +425,19 @@ pub const NodeItem = struct {
 
                 try fmt.format(writer, "\n", .{});
             },
+            .enum_item => |tag| {
+                try fmt.format(writer, "const {s} = enum {{\n", .{self.name.?});
+                const variants = tag.variants;
 
-            else => |tag| {
-                if (true) return; // FIX:
-                const name = self.name orelse unreachable;
-                const item_type = blk: {
-                    switch (tag) {
-                        Data.object_item, Data.module_item => break :blk "struct",
-                        Data.enum_item => break :blk "enum",
-                        else => {
-                            eprintln("unable to serialize '{s}'", .{@tagName(tag)});
-                            unreachable;
-                        },
-                    }
-                };
-                try fmt.format(writer, "const {s} = {s}", .{ name, item_type });
-                try fmt.format(writer, "\n", .{});
+                for (variants) |variant| try fmt.format(writer, "\t{},", .{variant});
+                try fmt.format(writer, "\n}};\n", .{});
+                // std.log.warn("unabled to serialize {s}\n", .{@tagName(tag)});
+            },
+            else => |_| {
+                // const name = self.name orelse unreachable;
+                @panic("todo:");
+                // try fmt.format(writer, "// TODO: to serialize @{s} = {s}", .{ @tagName(tag), name });
+                // try fmt.format(writer, "\n", .{});
             },
         }
     }
