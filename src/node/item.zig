@@ -7,16 +7,13 @@ const fmt = std.fmt;
 const is_empty = root.is_empty;
 const mem = std.mem;
 const eprintln = root.eprintln;
-const PathBuf = path.PathBuf;
+const Buf = path.Buf;
 const ImportPath = path.ImportPath;
 
 pub const IdentifierKind = union(enum) {
     discarded, // FIX: '_'
     matched: []const u8, // TODO:
-    scoped: struct {
-        path: PathBuf,
-        name: []const u8,
-    },
+    scoped: Buf,
     self,
     text: []const u8, // TODO: remove
 
@@ -31,11 +28,8 @@ pub const IdentifierKind = union(enum) {
                     .{name},
                 );
             },
-            .scoped => |scoped| {
-                try fmt.format(writer, "{s}.{s}", .{
-                    scoped.path.buffer[0..scoped.path.len],
-                    scoped.name,
-                });
+            .scoped => |pathbuf| {
+                try fmt.format(writer, "{s}", .{pathbuf.str()});
             },
 
             .discarded => try fmt.format(writer, "_", .{}),
@@ -51,7 +45,6 @@ pub const IdentifierKind = union(enum) {
 pub const NodeItem = struct {
     // TODO: visibility,
 
-    // TODO: contents: {}
     annotations: ?std.ArrayList([]const u8),
     data: Data,
     name: ?[]const u8, // TODO: remove
@@ -74,18 +67,10 @@ pub const NodeItem = struct {
         pub const Import = struct {
             const Self = @This();
 
-            path: ImportPath,
-            ctx: struct {
-                modules: []const Module,
-            },
+            import_paths: std.ArrayList(Buf),
 
-            pub fn init(modules: []const Module, import_path: ImportPath) Self {
-                return Self{
-                    .ctx = .{
-                        .modules = modules,
-                    },
-                    .path = import_path,
-                };
+            pub fn init(import_paths: std.ArrayList(Buf)) Self {
+                return Self{ .import_paths = import_paths };
             }
         };
 
@@ -300,16 +285,17 @@ pub const NodeItem = struct {
     pub fn serialize(self: *const NodeItem, writer: anytype) !void {
         switch (self.data) {
             .import_item => |import| {
-                var collect = std.ArrayList([]const u8)
-                    .init(std.heap.page_allocator); //FIX:
+                _ = import; // autofix
+                // var collect = std.ArrayList([]const u8)
+                //     .init(std.heap.page_allocator); //FIX:
                 // defer collect.clearAndFree(); // FIX:
 
-                import.path.collect_paths("", &collect);
+                // import.path.collect_paths("", &collect);
 
-                for (collect.items) |p| {
-                    const basename = path.ImportPath.basename(p);
-                    try fmt.format(writer, "const {s} = {s};\n", .{ basename, p });
-                }
+                // for (collect.items) |p| {
+                //     const basename = path.ImportPath.basename(p);
+                //     try fmt.format(writer, "const {s} = {s};\n", .{ basename, p });
+                // }
             },
             .module_item => |mod| {
                 assert(self.name != null);

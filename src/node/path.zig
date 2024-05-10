@@ -6,14 +6,14 @@ const fmt = std.fmt;
 
 const mem = std.mem;
 
-pub const PathBuf = struct {
+pub const Buf = struct {
     const Self = @This();
     const SIZE = 4096;
 
     buffer: [SIZE]u8,
     len: usize,
 
-    pub fn from(string: []const u8) PathBuf {
+    pub fn from(string: []const u8) Buf {
         var buffer = [_]u8{0} ** SIZE;
         mem.copyForwards(u8, buffer[0..], string);
         return .{
@@ -36,42 +36,34 @@ pub const PathBuf = struct {
 pub const ImportPath = union(enum) {
     const Self = @This();
 
-    all: void,
-    scope: struct {
-        name: PathBuf,
+    singular: struct {
+        name: Buf, // FIX: rename
         alias: ?[]const u8,
         next: ?*ImportPath,
     },
-    components: std.ArrayList(ImportPath),
+    many: std.ArrayList(ImportPath),
 
-    var PathData = struct { path: []const u8, last: []const u8 };
-    pub fn collect_paths(self: *const Self, prefix: []const u8, collect: *std.ArrayList([]const u8)) void {
+    const IdentifierKind = @import("./types.zig").IdentifierKind;
+    const PathData = struct { path: []const u8, last: []const u8 };
+
+    pub fn collect_paths(self: *const Self, prefix: []const u8, collect: *std.ArrayList(Buf)) void {
         switch (self.*) {
-            .scope => |scope| {
-                var name = scope.name;
-                var buffer = collect.allocator.alloc(u8, prefix.len + name.len + 1) catch unreachable;
-                mem.copyForwards(u8, buffer[0..], prefix);
-                mem.copyForwards(u8, buffer[prefix.len..], name.str());
-                const new_prefix_len = prefix.len + name.len;
+            .singular => |comp| {
+                var new_prefix = Buf.from(prefix);
+                new_prefix.append(comp.name.str());
 
-                var new_prefix = buffer[0..new_prefix_len];
-
-                if (scope.next) |next| {
-                    if (!eql(new_prefix, "")) {
-                        mem.copyForwards(u8, buffer[new_prefix_len..], ".");
-                        new_prefix = buffer[0..(new_prefix_len + 1)];
-                    }
-                    next.collect_paths(new_prefix, collect);
+                if (comp.next) |next| {
+                    if (new_prefix.len != 0) new_prefix.append(".");
+                    next.collect_paths(new_prefix.str(), collect);
                 } else {
                     collect.append(new_prefix) catch unreachable;
                 }
             },
-            .components => |components| {
+            .many => |components| {
                 for (components.items) |*comp| {
                     comp.collect_paths(prefix, collect);
                 }
             },
-            .all => @panic("todo"),
         }
     }
 
@@ -104,15 +96,15 @@ pub const PathParser = struct {
         };
     }
 
-    pub fn parse(self: Self) PathBuf {
-        var collect = std.ArrayList(PathBuf).init(self.allocator);
+    pub fn parse(self: Self) Buf {
+        var collect = std.ArrayList(Buf).init(self.allocator);
         defer {
             collect.clearAndFree();
         }
 
         self.path(self.root, &collect);
 
-        var result = PathBuf.from("");
+        var result = Buf.from("");
         const end = collect.items.len;
 
         for (collect.items, 0..) |pathbuf, i| {
@@ -124,11 +116,11 @@ pub const PathParser = struct {
         return result;
     }
 
-    pub fn path(self: Self, node: Node, collect: *std.ArrayList(PathBuf)) void {
+    pub fn path(self: Self, node: Node, collect: *std.ArrayList(Buf)) void {
         switch (node.node_type) {
             .self, .crate, .super => |tag| {
                 const source = @tagName(tag);
-                const pathbuf = PathBuf.from(source);
+                const pathbuf = Buf.from(source);
                 collect.append(pathbuf) catch unreachable;
             }, //FIX:
 
@@ -141,7 +133,7 @@ pub const PathParser = struct {
                 std.debug.assert(typekind == .identifier);
                 std.debug.assert(typekind.identifier == .text);
 
-                const p = PathBuf.from(typekind.identifier.text);
+                const p = Buf.from(typekind.identifier.text);
                 collect.append(p) catch unreachable;
             },
             .use_as_clause, .use_list, .scoped_use_list, .use_wildcard => unreachable,
@@ -153,17 +145,18 @@ pub const PathParser = struct {
         }
     }
 
-    fn scoped_identifier(self: @This(), node: Node, collect: *std.ArrayList(PathBuf)) void {
+    fn scoped_identifier(self: @This(), node: Node, collect: *std.ArrayList(Buf)) void {
         var name_field = node.get_field_unchecked("name");
 
-        const last_component: PathBuf = blk: {
+        // FIX:
+        const last_component: Buf = blk: {
             if (name_field.node_type == .super) {
-                const p = PathBuf.from("super");
+                const p = Buf.from("super");
                 break :blk p;
             } else {
                 std.debug.assert(name_field.node_type == .identifier);
                 const typekind = name_field.extract_type_ref();
-                const p = PathBuf.from(typekind.identifier.text);
+                const p = Buf.from(typekind.identifier.text);
                 break :blk p;
             }
         };
@@ -204,21 +197,23 @@ pub const ImportPathParser = struct {
         };
     }
 
-    pub fn parse(self: Self) ImportPath {
+    pub fn parse(self: Self, collect: *std.ArrayList(Buf)) void {
         const component = self.path(self.root);
+
         const ptr = self.allocator.create(@TypeOf(component)) catch unreachable;
 
         ptr.* = component;
 
-        const result = ImportPath{
-            .scope = .{
-                .name = PathBuf.from(""), // FIX:
+        const import_path = ImportPath{
+            .singular = .{
+                .name = Buf.from(""), // FIX:
                 .next = ptr,
                 .alias = null,
             },
         };
 
-        return result;
+        import_path.collect_paths("", collect);
+        for (collect.items) |p| std.log.warn("path: {s}", .{p.str()});
     }
 
     pub fn path(self: Self, node: Node) ImportPath { // FIX: remove self
@@ -226,7 +221,8 @@ pub const ImportPathParser = struct {
             .self, .crate, .super, .scoped_identifier, .identifier => {
                 const result = PathParser.init(self.allocator, self.parser, node)
                     .parse();
-                const r = ImportPath{ .scope = .{
+
+                const r = ImportPath{ .singular = .{
                     .name = result,
                     .alias = null,
                     .next = null,
@@ -257,9 +253,10 @@ pub const ImportPathParser = struct {
     fn scoped_identifier(self: @This(), node: Node) ImportPath {
         var name_field = node.get_field_unchecked("name");
 
+        // FIX:
         const last_component = blk: {
             if (name_field.node_type == .super) {
-                break :blk ImportPath{ .scope = .{
+                break :blk ImportPath{ .singular = .{
                     .name = "super",
                     .next = null,
                     .alias = null,
@@ -268,7 +265,7 @@ pub const ImportPathParser = struct {
                 std.debug.assert(name_field.node_type == .identifier);
                 const typekind = name_field.extract_type_ref();
 
-                break :blk ImportPath{ .scope = .{
+                break :blk ImportPath{ .singular = .{
                     .name = typekind.identifier.text,
                     .next = null,
                     .alias = null,
@@ -288,12 +285,12 @@ pub const ImportPathParser = struct {
             };
 
             var next: *ImportPath = &path_component;
-            while (next.scope.next) |n| next = n;
+            while (next.singular.next) |n| next = n;
 
             const ptr = self.allocator.create(@TypeOf(last_component)) catch unreachable;
             ptr.* = last_component;
 
-            next.scope.next = ptr;
+            next.singular.next = ptr;
             return path_component;
         } else return last_component;
     }
@@ -302,16 +299,17 @@ pub const ImportPathParser = struct {
         const path_field = node.get_field_unchecked("path");
         var path_component = self.path(path_field.*);
 
+        // FIX:
         var last_component: *ImportPath = &path_component;
 
-        while (last_component.scope.next) |n| {
+        while (last_component.singular.next) |n| {
             last_component = n;
         }
 
         var alias_field = node.get_field_unchecked("alias");
         const alias_identifier = alias_field.extract_type_ref().identifier;
 
-        last_component.scope.alias = alias_identifier.text;
+        last_component.singular.alias = alias_identifier.text;
         return path_component;
     }
 
@@ -319,15 +317,16 @@ pub const ImportPathParser = struct {
         const use_list_field = node.get_field_unchecked("list");
         const last_components = self.use_list(use_list_field.*);
 
+        // FIX:
         if (node.get_field("path")) |field| {
             var path_components = self.path(field.*);
             var next = &path_components;
 
-            while (next.scope.next) |n| next = n;
+            while (next.singular.next) |n| next = n;
 
             const ptr = self.allocator.create(@TypeOf(last_components)) catch unreachable;
             ptr.* = last_components;
-            next.scope.next = ptr;
+            next.singular.next = ptr;
 
             return path_components;
         }
@@ -340,9 +339,15 @@ pub const ImportPathParser = struct {
         const child = children.items[0];
         var pathbuf = PathParser.init(self.allocator, self.parser, child.*).parse();
 
-        std.debug.print("path_component: {s}\n", .{pathbuf.str()});
+        pathbuf.append(".*"); // FIX:
 
-        const result: ImportPath = .all;
+        const result: ImportPath = .{
+            .singular = .{
+                .name = pathbuf,
+                .alias = null,
+                .next = null,
+            },
+        };
         return result;
     }
 
@@ -369,8 +374,8 @@ pub const ImportPathParser = struct {
                 },
                 .identifier => {
                     const name = child.extract_type_ref();
-                    collect.append(ImportPath{ .scope = .{
-                        .name = PathBuf.from(name.identifier.text),
+                    collect.append(ImportPath{ .singular = .{
+                        .name = Buf.from(name.identifier.text),
                         .next = null,
                         .alias = null,
                     } }) catch unreachable;
@@ -383,7 +388,7 @@ pub const ImportPathParser = struct {
         }
 
         return ImportPath{
-            .components = collect,
+            .many = collect,
         };
     }
 

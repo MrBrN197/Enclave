@@ -23,6 +23,8 @@ pub const NodeItem = node_types.NodeItem;
 pub const NodeType = node_types.NodeType;
 pub const PathParser = path.PathParser;
 pub const TypeKind = NodeItem.Data.TypeKind;
+pub const Import = NodeItem.Data.Import;
+const Buf = path.Buf;
 
 fn out(writer: Writer, comptime str: []const u8, args: anytype) void {
     return std.fmt.format(writer, str, args) catch unreachable;
@@ -373,12 +375,13 @@ pub const Node = struct {
 
     fn extract_struct_item(self: *const @This()) NodeItem {
         const parser = self.ctx.parser;
+        _ = parser; // autofix
         // TODO: if self.get_field("visibility_modifier") ||
 
         assert(self.node_type == .struct_item);
 
-        const id_field = self.get_field_unchecked("name"); // $.identifier,
-        const id = parser.node_to_string_alloc(id_field.node, self.allocator);
+        const struct_name_field = self.get_field_unchecked("name"); // $.identifier,
+        const struct_name = struct_name_field.extract_type_ref().identifier;
 
         const generics: ?std.ArrayList(TypeKind) = blk: {
             if (self.get_field("type_parameters")) |type_parameters| {
@@ -400,17 +403,15 @@ pub const Node = struct {
                     switch (decl.node_type) {
                         .field_declaration => {
                             // $visibility_modifier?,
-                            const name_field = decl.get_field_unchecked("name"); //  $_field_identifier
-                            const name = self.ctx.parser.node_to_string_alloc(name_field.node, self.allocator);
-                            const type_field = decl.get_field_unchecked("type"); //  $_type
-                            const type_kind = type_field.extract_type_ref();
+                            const struct_field_name_field = decl.get_field_unchecked("name"); //  $_field_identifier
+                            const struct_field_name = self.ctx.parser.node_to_string_alloc(struct_field_name_field.node, self.allocator);
+                            const struct_field_type_field = decl.get_field_unchecked("type"); //  $_type
+                            const struct_field_type = struct_field_type_field.extract_type_ref();
 
-                            const field = NodeItem.Data.Object.Field{ .field = .{
-                                .name = name,
-                                .type_kind = type_kind,
-                            } };
-
-                            fields.append(field) catch unreachable;
+                            fields.append(NodeItem.Data.Object.Field{ .field = .{
+                                .name = struct_field_name,
+                                .type_kind = struct_field_type,
+                            } }) catch unreachable;
                         },
                         .attribute_item => continue, // FIX:
                         else => |_| {
@@ -446,8 +447,7 @@ pub const Node = struct {
             },
         };
 
-        assert(!eql(id, ""));
-        const result = NodeItem.init(object, id);
+        const result = NodeItem.init(object, struct_name.text);
         return result;
     }
 
@@ -735,12 +735,14 @@ pub const Node = struct {
 
                 if (self.get_field("path")) |path_field| {
                     const result = PathParser.init(self.allocator, self.ctx.parser, path_field.*);
-                    const scope = result.parse();
+                    var scope = result.parse();
+                    scope.append(type_kind.identifier.text);
 
-                    return TypeKind{ .identifier = .{ .scoped = .{
-                        .name = type_kind.identifier.text,
-                        .path = scope,
-                    } } };
+                    return TypeKind{
+                        .identifier = .{
+                            .scoped = scope,
+                        },
+                    };
                 }
 
                 return type_kind;
@@ -1136,11 +1138,14 @@ pub const Node = struct {
 
         const argument = self.get_field_unchecked("argument");
 
-        const import_path = ImportPathParser.init(self.allocator, ctx.parser, argument.*)
-            .parse();
+        var import_paths = std.ArrayList(Buf).init(self.allocator);
+        ImportPathParser.init(
+            self.allocator,
+            ctx.parser,
+            argument.*,
+        ).parse(&import_paths);
 
-        const modules = ctx.modules;
-        const import_item = NodeItem.Data.Import.init(modules, import_path);
+        const import_item = Import.init(import_paths);
 
         const result = NodeItem.init(
             .{
