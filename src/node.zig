@@ -573,10 +573,17 @@ pub const Node = struct {
         const name = self.ctx.parser.node_to_string_alloc(name_field.node, self.allocator);
 
         const module: Module = if (self.get_field("body")) |body_field| blk: { // $declaration_list);
+            var collect = std.ArrayList(NodeItem).init(self.allocator);
+            const ctx = .{
+                .modules = &[_]Module{},
+                .parser = self.ctx.parser,
+                .items = &collect,
+            };
+
             const body = Node.init_with_context(
                 self.allocator,
                 body_field.node,
-                self.ctx,
+                ctx,
             );
 
             const module = body.extract_module();

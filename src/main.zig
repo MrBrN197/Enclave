@@ -33,34 +33,15 @@ pub fn main() void {
 
     var count: usize = 0;
 
-    // const suffix = ".zig";
     var filepaths = std.ArrayList([]const u8).init(gpa);
 
     while (argv.next()) |filepath| {
         filepaths.append(filepath) catch unreachable;
-        // const filepath_len = filepath.len;
-        // const buffer = gpa.alloc(u8, filepath_len + suffix.len) catch unreachable;
 
         count += 1;
     }
 
     convert_file(filepaths.items, (std.io.getStdOut().writer()));
-
-    // const outfilepath = std.fmt.bufPrint(
-    //     buffer,
-    //     "{s}{s}",
-    //     .{ filepath, suffix },
-    // ) catch unreachable;
-
-    // std.log.info("{s:>50}\n=> {s:>50}", .{ filepath, outfilepath });
-
-    // const outfile = std.fs.cwd().createFile(
-    //     outfilepath,
-    //     .{ .exclusive = false },
-    // ) catch unreachable; // FIX:
-
-    // convert_file(filepath, outfile.writer());
-    // // convert_file(filepath, (std.io.getStdOut().writer()));
 
     if (count == 0) {
         std.log.err("error: filepath required", .{});
@@ -84,9 +65,28 @@ pub fn convert_file(filepaths: []const []const u8, writer: anytype) void {
         return;
     };
 
+    const suffix = ".zig";
     for (parse_results.items) |parse_result| {
         std.log.info("Item: filepath: {s}", .{parse_result.filepath});
+
+        const filepath = parse_result.filepath;
+        const filepath_len = filepath.len;
+        const buffer = gpa.alloc(u8, filepath_len + suffix.len) catch unreachable;
+        const outfilepath = std.fmt.bufPrint(
+            buffer,
+            "{s}{s}",
+            .{ filepath, suffix },
+        ) catch unreachable;
+
+        std.log.info("{s:>50}\n=> {s:>50}", .{ filepath, outfilepath });
+
+        const outfile = std.fs.cwd().createFile(
+            outfilepath,
+            .{ .exclusive = false },
+        ) catch unreachable; // FIX:
+
         for (parse_result.parserd_module.module.items.items) |item| {
+            item.serialize(outfile.writer()) catch unreachable;
             item.serialize(writer) catch unreachable;
         }
     }
