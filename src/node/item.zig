@@ -47,7 +47,7 @@ pub const NodeItem = struct {
 
     annotations: ?std.ArrayList([]const u8),
     data: Data,
-    name: ?[]const u8, // TODO: remove
+    name: ?[]const u8,
 
     pub const Data = union(enum) {
         const_item: Constant,
@@ -57,7 +57,6 @@ pub const NodeItem = struct {
         object_item: Object,
         procedure_item: Procedure,
         trait_item: struct {
-            name: []const u8,
             inner_module: Module,
             constraints: std.ArrayList([]const u8),
         },
@@ -75,7 +74,6 @@ pub const NodeItem = struct {
         };
 
         pub const Constant = struct {
-            name: IdentifierKind,
             value_expr: ?[]const u8,
             type_kind: TypeKind,
         };
@@ -250,18 +248,7 @@ pub const NodeItem = struct {
         };
 
         pub const TypeItem = struct {
-            name: []const u8,
             kind: TypeKind,
-
-            const Self = @This();
-            pub fn format(
-                self: Self,
-                comptime _: []const u8,
-                _: fmt.FormatOptions,
-                writer: anytype,
-            ) !void {
-                return fmt.format(writer, "{s}", .{self.name});
-            }
         };
     };
 
@@ -313,20 +300,19 @@ pub const NodeItem = struct {
                 try fmt.format(writer, "", .{});
             },
             .const_item => |item_data| {
-                assert(item_data.name == .text);
                 assert(item_data.value_expr != null);
 
                 const val = item_data.value_expr.?;
 
                 try fmt.format(writer, "const {s}: {} = undefined; // FIX: \n// {s};", .{
-                    item_data.name.text,
+                    self.name.?,
                     item_data.type_kind,
                     val,
                 });
                 try fmt.format(writer, "\n", .{});
             },
             .procedure_item => |data| {
-                const name = self.name orelse unreachable;
+                const name = self.name.?;
                 // TODO: visibility
 
                 if (data.generics) |generics| {
@@ -367,12 +353,8 @@ pub const NodeItem = struct {
                     .{name},
                 );
             },
-            // .type_item => |data| {
-            //     const name = data.name;
-            //     try fmt.format(writer, "const type = {s}", .{name});
-            // },
             .object_item => |data| {
-                const name = self.name orelse unreachable;
+                const name = self.name.?;
 
                 if (data.generics) |generics| {
                     try fmt.format(writer, "// ", .{});
@@ -421,10 +403,10 @@ pub const NodeItem = struct {
                 // std.log.warn("unabled to serialize {s}\n", .{@tagName(tag)});
             },
             .type_item => |data| {
-                try fmt.format(writer, "//type\nconst {s} = {?};\n", .{ data.name, data.kind });
+                try fmt.format(writer, "//type\nconst {s} = {};\n", .{ self.name.?, data.kind });
             },
             .trait_item => |data| {
-                const name = data.name;
+                const name = self.name.?;
                 try fmt.format(writer, "// TODO: Interface {s}\nconst {s} = struct {{}};\n", .{ name, name });
                 for (data.inner_module.items.items) |item| try item.serialize(writer);
             },

@@ -92,7 +92,7 @@ pub const Node = struct {
         // FIX:
     }
 
-    pub fn extract_type_item(self: *Node) NodeItem.Data.TypeItem {
+    pub fn extract_type_item(self: *Node) NodeItem {
         // TODO: $visibility_modifier
 
         const name_field = self.get_field_unchecked("name"); //  $_type_identifier
@@ -103,10 +103,14 @@ pub const Node = struct {
         const type_kind = type_field.extract_type_ref();
         // TODO: $where_clause,
 
-        return NodeItem.Data.TypeItem{
-            .name = typename,
-            .kind = type_kind,
+        const item_data = NodeItem.Data{
+            .type_item = .{
+                .kind = type_kind,
+            },
         };
+
+        const type_item = NodeItem.init(item_data, typename);
+        return type_item;
     }
 
     pub fn extract_module(self: *const Self) Module {
@@ -158,13 +162,7 @@ pub const Node = struct {
                 // collect.append(item) catch unreachable;
             },
             .type_item => {
-                const type_item = self.extract_type_item();
-                const typename = type_item.name;
-                const item_data = NodeItem.Data{
-                    .type_item = type_item,
-                };
-
-                const item = NodeItem.init(item_data, typename);
+                const item = self.extract_type_item();
                 self.ctx.items.append(item) catch unreachable;
             },
 
@@ -474,11 +472,12 @@ pub const Node = struct {
             } else break :blk null;
         };
 
-        const item_data = NodeItem.Data{ .const_item = .{
-            .name = IdentifierKind{ .text = name },
-            .type_kind = type_kind,
-            .value_expr = value_expr,
-        } };
+        const item_data = NodeItem.Data{
+            .const_item = .{
+                .type_kind = type_kind,
+                .value_expr = value_expr,
+            },
+        };
         const result = NodeItem.init(item_data, name);
         return result;
     }
@@ -505,11 +504,12 @@ pub const Node = struct {
             } else break :blk null;
         };
 
-        const item_data = NodeItem.Data{ .const_item = .{
-            .name = IdentifierKind{ .text = name },
-            .type_kind = type_kind,
-            .value_expr = value_expr,
-        } };
+        const item_data = NodeItem.Data{
+            .const_item = .{
+                .type_kind = type_kind,
+                .value_expr = value_expr,
+            },
+        };
         const result = NodeItem.init(item_data, name);
         return result;
     }
@@ -549,7 +549,6 @@ pub const Node = struct {
 
         const item_data = NodeItem.Data{
             .trait_item = .{
-                .name = name.identifier.text,
                 .inner_module = module,
                 .constraints = type_constraints,
             },
