@@ -81,7 +81,7 @@ pub const Parser = struct {
         var results = std.ArrayList(ParseResult).init(allocator);
 
         for (filepaths) |filepath| {
-            std.log.err("filePath: {s}", .{filepath});
+            std.log.info("filePath: {s}", .{filepath});
             const filesize = (std.fs.cwd().statFile(filepath) catch unreachable).size;
 
             const buffer = allocator.alloc(u8, filesize + 1) catch unreachable;

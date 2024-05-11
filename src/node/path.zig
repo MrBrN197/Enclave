@@ -10,6 +10,7 @@ pub const Buf = struct {
     const Self = @This();
     const SIZE = 4096;
 
+    allocator: std.mem.Allocator,
     buffer: [SIZE]u8,
     len: usize,
 
@@ -17,9 +18,15 @@ pub const Buf = struct {
         var buffer = [_]u8{0} ** SIZE;
         mem.copyForwards(u8, buffer[0..], string);
         return .{
+            .allocator = std.heap.page_allocator, // FIX:
             .buffer = buffer,
             .len = string.len,
         };
+    }
+
+    fn deinit(self: *Self) void {
+        self.allocator.free(self.buffer);
+        @panic("todo: ");
     }
 
     pub fn append(self: *Self, string: []const u8) void {

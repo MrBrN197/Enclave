@@ -244,14 +244,14 @@ pub const NodeItem = struct {
                     .no_return => @panic("todo"),
                     .proc => try fmt.format(writer, "fn(void) void", .{}), // FIX:
 
-                    else => return fmt.format(writer, "__{s}_type", .{@tagName(self)}),
+                    else => @panic("todo"),
                 }
             }
         };
 
         pub const TypeItem = struct {
             name: []const u8,
-            kind: ?TypeKind, // TODO:
+            kind: TypeKind,
 
             const Self = @This();
             pub fn format(
@@ -367,6 +367,10 @@ pub const NodeItem = struct {
                     .{name},
                 );
             },
+            // .type_item => |data| {
+            //     const name = data.name;
+            //     try fmt.format(writer, "const type = {s}", .{name});
+            // },
             .object_item => |data| {
                 const name = self.name orelse unreachable;
 
@@ -408,19 +412,21 @@ pub const NodeItem = struct {
 
                 try fmt.format(writer, "\n", .{});
             },
-            .enum_item => |tag| {
+            .enum_item => |data| {
                 try fmt.format(writer, "const {s} = enum {{\n", .{self.name.?});
-                const variants = tag.variants;
+                const variants = data.variants;
 
                 for (variants) |variant| try fmt.format(writer, "\t{},", .{variant});
                 try fmt.format(writer, "\n}};\n", .{});
                 // std.log.warn("unabled to serialize {s}\n", .{@tagName(tag)});
             },
-            else => |_| {
-                // const name = self.name orelse unreachable;
-                @panic("todo:");
-                // try fmt.format(writer, "// TODO: to serialize @{s} = {s}", .{ @tagName(tag), name });
-                // try fmt.format(writer, "\n", .{});
+            .type_item => |data| {
+                try fmt.format(writer, "//type\nconst {s} = {?};\n", .{ data.name, data.kind });
+            },
+            .trait_item => |data| {
+                const name = data.name;
+                try fmt.format(writer, "// TODO: Interface {s}\nconst {s} = struct {{}};\n", .{ name, name });
+                for (data.inner_module.items.items) |item| try item.serialize(writer);
             },
         }
     }
