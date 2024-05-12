@@ -40,21 +40,30 @@ pub const NodeItem = struct {
     pub const Data = union(enum) {
         const_item: Constant,
         enum_item: Enum,
+        function_signature_item: FnSignature,
         impl_item: Impl,
+        import_item: Import,
         module_item: Module,
         object_item: Object,
         procedure_item: Procedure,
         trait_item: struct {
-            inner_module: Module,
-            constraints: std.ArrayList([]const u8),
+            body: Module,
+            bounds: std.StringArrayHashMap(std.ArrayList(TypeKind)),
+            generics: ?std.ArrayList(TypeKind),
         },
         type_item: TypeItem,
-        import_item: Import,
+
+        pub const FnSignature = struct {
+            bounds: std.StringArrayHashMap(std.ArrayList(TypeKind)),
+            generics: ?std.ArrayList(TypeKind),
+            params: std.ArrayList(Procedure.Param),
+            return_type: ?TypeKind,
+        };
 
         pub const Import = struct {
-            const Self = @This();
-
             import_paths: std.ArrayList(Buf),
+
+            const Self = @This();
 
             pub fn init(import_paths: std.ArrayList(Buf)) Self {
                 return Self{ .import_paths = import_paths };
@@ -62,20 +71,22 @@ pub const NodeItem = struct {
         };
 
         pub const Constant = struct {
-            value_expr: ?[]const u8,
             type_kind: TypeKind,
+            value_expr: ?[]const u8,
         };
 
         pub const Impl = struct {
-            procedures: ?[]const Procedure,
-            item_ref: TypeKind, // TODO: remove '?'
+            body: ?Module,
+            bounds: std.StringArrayHashMap(std.ArrayList(TypeKind)),
+            generics: ?std.ArrayList(TypeKind),
+            implementor: IdentifierKind,
+            for_interface: ?IdentifierKind,
         };
 
         pub const Module = struct {
-            const Item = NodeItem;
-
             items: std.ArrayList(NodeItem),
 
+            const Item = NodeItem;
             const Self = @This();
 
             pub fn init(allocator: std.mem.Allocator) Self {
@@ -110,10 +121,10 @@ pub const NodeItem = struct {
         };
 
         pub const Procedure = struct {
+            bounds: ?std.StringArrayHashMap(std.ArrayList(TypeKind)),
+            generics: ?std.ArrayList(TypeKind),
             params: []const Param,
             return_type: TypeKind,
-            generics: ?std.ArrayList(TypeKind),
-            bounds: ?std.StringArrayHashMap(std.ArrayList(TypeKind)),
 
             pub const Param = struct {
                 name: ?IdentifierKind,
@@ -300,9 +311,7 @@ pub const NodeItem = struct {
 
                 try fmt.format(writer, "\n", .{});
             },
-            .impl_item => |_| {
-                try fmt.format(writer, "", .{});
-            },
+            .impl_item => |_| @panic("todo"),
             .const_item => |item_data| {
                 assert(item_data.value_expr != null);
 
@@ -418,9 +427,29 @@ pub const NodeItem = struct {
                 try fmt.format(writer, "//type\nconst {s} = {};\n", .{ self.name.?, data.kind });
             },
             .trait_item => |data| {
-                const name = self.name.?;
-                try fmt.format(writer, "// TODO: Interface {s}\nconst {s} = struct {{}};\n", .{ name, name });
-                for (data.inner_module.items.items) |item| try item.serialize(writer);
+                const item_name = self.name.?;
+
+                try fmt.format(writer, "// {s} Interface\n", .{item_name});
+                try fmt.format(writer, "const {s} = struct {{\n", .{item_name});
+                try fmt.format(writer, "const Self = @This();\n", .{});
+                for (data.body.items.items) |item| try item.serialize(writer);
+
+                try fmt.format(writer, "}};\n", .{});
+            },
+            .function_signature_item => |itemdata| {
+                const item_name = self.name.?;
+
+                // TODO: bounds
+
+                try fmt.format(writer, "{s}Fn: *const fn(", .{item_name});
+                for (itemdata.params.items) |param| try fmt.format(writer, "{},", .{param.typekind.?});
+                try fmt.format(writer, ") ", .{});
+                if (itemdata.return_type) |rt| {
+                    try fmt.format(writer, "{}", .{rt});
+                } else {
+                    try fmt.format(writer, "void", .{});
+                }
+                try fmt.format(writer, ",\n", .{});
             },
         }
     }

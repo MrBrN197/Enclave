@@ -215,7 +215,49 @@ pub const Node = struct {
                 self.ctx.items.append(item) catch unreachable;
             },
 
-            .function_signature_item => {}, // FIX:  comment
+            .function_signature_item => {
+                // TODO: vis
+                // TODO: function_modifiers
+
+                self.ctx.parser.print_source(self.node);
+
+                const name_field = self.get_field_unchecked("name");
+                const name = name_field.extract_type_ref().identifier;
+
+                const params_field = self.get_field_unchecked("parameters");
+                const params = params_field.extract_parameters();
+
+                var bounds = BoundsMap.init(self.allocator);
+
+                const type_params = ty: {
+                    if (self.get_field("type_parameters")) |field| {
+                        break :ty field.extract_type_parameters(&bounds);
+                    } else break :ty null;
+                };
+
+                const return_type: ?TypeKind = ret: {
+                    if (self.get_field("return_type")) |field| {
+                        const return_type: TypeKind = field.extract_type_ref();
+                        break :ret return_type; // autofix
+                    } else break :ret null;
+                };
+
+                for (self.get_children_named().items) |child| {
+                    if (child.node_type == .where_clause) child.extract_where_clause(&bounds);
+                }
+
+                const function_signature_data = NodeItem.Data{
+                    .function_signature_item = .{
+                        .bounds = bounds,
+                        .generics = type_params,
+                        .params = params,
+                        .return_type = return_type,
+                    },
+                };
+
+                const item = NodeItem.init(function_signature_data, name.text);
+                self.ctx.items.append(item) catch unreachable;
+            },
 
             .attribute_item => {}, // TODO
             .expression_statement => {}, // TODO:
@@ -538,12 +580,12 @@ pub const Node = struct {
         const name = name_field.extract_type_ref();
         assert(name == .identifier);
 
-        var type_constraints = std.ArrayList([]const u8).init(self.allocator);
-
-        if (self.get_field("type_parameters")) |field| { // $type_parameters
-            const text = parser.node_to_string_alloc(field.node, self.allocator);
-            type_constraints.append(text) catch unreachable; // TODO: FIX:
-        }
+        var bounds = BoundsMap.init(self.allocator);
+        const generics = blk: {
+            if (self.get_field("type_parameters")) |field| {
+                break :blk field.extract_type_parameters(&bounds);
+            } else break :blk null;
+        };
 
         var annotations = std.ArrayList([]const u8).init(parser.allocator); // FIX:
         if (self.get_field("bounds")) |r| { // $trait_bounds
@@ -551,22 +593,33 @@ pub const Node = struct {
             annotations.append(text) catch unreachable;
         }
 
-        // TODO: $where_clause
+        const children = self.get_children_named();
+        for (children.items) |child| {
+            if (child.node_type == .where_clause) child.extract_where_clause(&bounds);
+        }
 
         const body_field = self.get_field_unchecked("body");
 
         // FIX:
+        var collect = std.ArrayList(NodeItem).init(self.allocator);
+        const ctx = Ctx{
+            .modules = &[_]Module{},
+            .parser = self.ctx.parser,
+            .items = &collect,
+        };
+
         const body = Node.init_with_context(
             self.allocator,
             body_field.node,
-            self.ctx,
+            ctx,
         );
         const module = body.extract_module();
 
         const item_data = NodeItem.Data{
             .trait_item = .{
-                .inner_module = module,
-                .constraints = type_constraints,
+                .body = module,
+                .bounds = bounds,
+                .generics = generics,
             },
         };
         var result = NodeItem.init(item_data, name.identifier.text);
@@ -607,10 +660,6 @@ pub const Node = struct {
 
             break :blk module;
         } else Module.init(self.allocator);
-
-        // const item_data = NodeItem.ItemData{
-        //     .module_item = module,
-        // };
 
         const data = NodeItem.Data{
             .module_item = module,
@@ -1099,9 +1148,11 @@ pub const Node = struct {
 
         const variants = body.extract_enum_variants();
 
-        const item_data = NodeItem.Data{ .enum_item = .{
-            .variants = variants.items,
-        } };
+        const item_data = NodeItem.Data{
+            .enum_item = .{
+                .variants = variants.items,
+            },
+        };
         const result = NodeItem.init(item_data, name);
         return result;
     }
@@ -1136,30 +1187,57 @@ pub const Node = struct {
 
     /// FIX:
     fn extract_impl_item(self: *const @This()) NodeItem {
-        const parser = self.ctx.parser;
-        _ = parser; // autofix
-        if (self.get_field("type_parameters")) |field| { //$type_parameters
-            _ = field; // autofix
+        var bounds = BoundsMap.init(self.allocator);
 
-        }
+        const type_parameters = params: {
+            if (self.get_field("type_parameters")) |field| { //$type_parameters
+                break :params field.extract_type_parameters(&bounds);
+            } else break :params null;
+        };
 
-        if (self.get_field("trait")) |_| {
-            // TODO: for trait
-            // ($_type_identifier | $scoped_type_identifier | $generic_type)
-
-        }
+        const trait_identifier = trait: {
+            if (self.get_field("trait")) |field| {
+                // ($_type_identifier | $scoped_type_identifier | $generic_type)
+                break :trait field.extract_type_ref().identifier;
+            } else break :trait null;
+        };
 
         const type_field = self.get_field_unchecked("type");
-        const type_ref = type_field.extract_type_ref();
+        const implementor_identifier = type_field.extract_type_ref().identifier;
 
-        // TODO: $where_clause?
-        // TODO: if(self.get_field("body") || // $declaration_list
+        const children = self.get_children_named();
+        for (children.items) |child| {
+            if (child.node_type == .where_clause) child.extract_where_clause(&bounds);
+        }
+
+        const body: ?Module = body: {
+            if (self.get_field("body")) |body_field| {
+                var collect = std.ArrayList(NodeItem).init(self.allocator); // FIX:
+                const ctx = Ctx{
+                    .modules = &[_]Module{}, //FIX:
+                    .parser = self.ctx.parser,
+                    .items = &collect,
+                };
+
+                const body = Node.init_with_context(
+                    self.allocator,
+                    body_field.node,
+                    ctx,
+                );
+                const module = body.extract_module();
+
+                break :body module;
+            } else break :body null;
+        };
 
         const item_data = NodeItem.Data{
             .impl_item = .{
-                .procedures = null, // TODO:
-                .item_ref = type_ref,
-            }, // TODO:
+                .body = body,
+                .bounds = bounds,
+                .generics = type_parameters,
+                .implementor = implementor_identifier,
+                .for_interface = trait_identifier,
+            },
         };
         const result = NodeItem.init(item_data, null);
         return result;
