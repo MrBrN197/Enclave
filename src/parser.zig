@@ -159,6 +159,22 @@ pub const Parser = struct {
 
         return buffer[0..idx];
     }
+    pub fn node_to_string_buf(self: *const Parser, node: c.TSNode, buffer: []u8) []const u8 {
+        const start = c.ts_node_start_point(node);
+        const end = c.ts_node_end_point(node);
+        const lines = self.get_text_at(start, end);
+
+        var size: usize = 0;
+        for (lines) |line| size += line.len;
+
+        var idx: usize = 0;
+        for (lines) |slice| {
+            std.mem.copyForwards(u8, buffer[idx..], slice);
+            idx += slice.len;
+        }
+
+        return buffer[0..idx];
+    }
 
     pub fn node_to_string(self: *const Parser, node: c.TSNode) []const u8 {
         const start = c.ts_node_start_point(node);

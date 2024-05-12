@@ -327,9 +327,7 @@ pub const Node = struct {
         return children;
     }
 
-    fn extract_type_parameters(self: *const Node) ?std.ArrayList(TypeKind) {
-        const parser = self.ctx.parser;
-        _ = parser; // autofix
+    fn extract_type_parameters(self: *const Node, collect_bounds: *BoundsMap) ?std.ArrayList(TypeKind) {
         var params = std.ArrayList(TypeKind).init(self.allocator);
 
         const children = self.get_children_named();
@@ -349,14 +347,30 @@ pub const Node = struct {
                     const typename_field = child.get_field_unchecked("left");
 
                     if (typename_field.node_type == .lifetime) {
-                        @panic("todo");
-                    } else {
-                        assert(typename_field.node_type == .type_identifier); // _type_identifier
-                        const typename = typename_field.extract_type_ref();
-
-                        params.append(typename) catch unreachable;
+                        std.log.info("skipping lifetime", .{});
+                        continue;
                     }
-                    // field('bounds', $.trait_bounds),
+
+                    assert(typename_field.node_type == .type_identifier);
+
+                    const typename = typename_field.extract_type_ref();
+
+                    params.append(typename) catch unreachable;
+
+                    const bounds = child.get_field_unchecked("bounds").get_children_named();
+                    var typekinds = std.ArrayList(TypeKind).init(self.allocator);
+
+                    for (bounds.items) |bound| {
+                        switch (bound.node_type) {
+                            .lifetime => std.log.info("skipping lifetime", .{}),
+                            .higher_ranked_trait_bound => @panic("todo: higher_ranked_trait_bound "),
+                            else => {
+                                const typekind = bound.extract_type_ref();
+                                typekinds.append(typekind) catch unreachable;
+                            },
+                        }
+                    }
+                    collect_bounds.putNoClobber(typename.identifier.text, typekinds) catch unreachable;
                 },
                 .optional_type_parameter => @panic("todo:"),
                 .const_parameter => @panic("todo:"),
@@ -381,9 +395,10 @@ pub const Node = struct {
         const struct_name_field = self.get_field_unchecked("name"); // $.identifier,
         const struct_name = struct_name_field.extract_type_ref().identifier;
 
+        var bounds = BoundsMap.init(self.allocator);
         const generics: ?std.ArrayList(TypeKind) = blk: {
             if (self.get_field("type_parameters")) |type_parameters| {
-                const params = type_parameters.extract_type_parameters();
+                const params = type_parameters.extract_type_parameters(&bounds);
 
                 break :blk params;
             } else break :blk null;
@@ -442,6 +457,7 @@ pub const Node = struct {
                 .fields = fields.items,
                 .generics = generics,
                 .ordered = ordered,
+                .bounds = bounds,
             },
         };
 
@@ -733,13 +749,14 @@ pub const Node = struct {
                 assert(type_kind.identifier == .text);
 
                 if (self.get_field("path")) |path_field| {
-                    const result = PathParser.init(self.allocator, self.ctx.parser, path_field.*);
-                    var scope = result.parse();
-                    scope.append(type_kind.identifier.text);
+                    const path_parser = PathParser.init(self.allocator, self.ctx.parser, path_field.*);
+                    var scope_buf = path_parser.parse();
+                    scope_buf.append(".");
+                    scope_buf.append(type_kind.identifier.text);
 
                     return TypeKind{
                         .identifier = .{
-                            .scoped = scope,
+                            .scoped = scope_buf,
                         },
                     };
                 }
@@ -828,16 +845,15 @@ pub const Node = struct {
         assert((name_field.node_type == .identifier)); // TODO: $metavariable
         const name = parser.node_to_string_alloc(name_field.node, self.allocator);
 
+        var bounds = BoundsMap.init(self.allocator);
         const generics = blk: {
             if (self.get_field("type_parameters")) |field| {
-                break :blk field.extract_type_parameters();
+                break :blk field.extract_type_parameters(&bounds);
             } else break :blk null;
         };
 
         const parameters_field = self.get_field_unchecked("parameters");
         const params = parameters_field.extract_parameters();
-
-        // TODO: get_field("where_clause"),
 
         const return_type_kind = blk: {
             if (self.get_field("return_type")) |return_type| {
@@ -849,16 +865,73 @@ pub const Node = struct {
 
         // TODO: field('body') //  $.block;
 
+        const children = self.get_children_named();
+        for (children.items) |child| {
+            if (child.node_type == .where_clause) {
+                child.extract_where_clause(&bounds);
+            }
+        }
+
         const item_data = NodeItem.Data{
             .procedure_item = .{
                 .params = params.items,
                 .return_type = return_type_kind,
                 .generics = generics,
+                .bounds = bounds,
             },
         };
 
         const result = NodeItem.init(item_data, name);
         return result;
+    }
+
+    const BoundsMap = std.StringArrayHashMap(std.ArrayList(TypeKind));
+    ///
+    fn extract_where_clause(self: *const Self, collect_bounds: *BoundsMap) void {
+        const children = self.get_children_named();
+
+        assert(children.items.len > 0);
+
+        for (children.items) |child| {
+            assert(child.node_type == .where_predicate);
+
+            const predicate = child;
+            const left_field = predicate.get_field_unchecked("left");
+
+            var identifier: IdentifierKind = undefined;
+
+            switch (left_field.node_type) {
+                .lifetime => @panic("todo: lifetime "),
+                .scoped_type_identifier => @panic("todo: scoped_type_identifier "),
+                .generic_type => @panic("todo: generic_type "),
+                .reference_type => @panic("todo: reference_type "),
+                .pointer_type => @panic("todo: pointer_type "),
+                .tuple_type => @panic("todo: tuple_type "),
+                .array_type => @panic("todo: array_type "),
+                .higher_ranked_trait_bound => @panic("todo: higher_ranked_trait_bound "),
+
+                else => {
+                    const typekind = left_field.extract_type_ref();
+                    assert(typekind == .identifier);
+                    identifier = typekind.identifier;
+                },
+            }
+
+            const bounds = child.get_field_unchecked("bounds").get_children_named();
+            var bounds_list = std.ArrayList(TypeKind).init(self.allocator);
+
+            for (bounds.items) |bound| {
+                switch (bound.node_type) {
+                    .lifetime => @panic("todo: lifetime "),
+                    .higher_ranked_trait_bound => @panic("todo: higher_ranked_trait_bound "),
+                    else => {
+                        const typekind = bound.extract_type_ref();
+                        bounds_list.append(typekind) catch unreachable;
+                    },
+                }
+            }
+            collect_bounds.putNoClobber(identifier.text, bounds_list) catch unreachable;
+        }
     }
 
     fn extract_parameters(
@@ -901,7 +974,8 @@ pub const Node = struct {
                     break :blk .{ .pname = name, .ptype = typename };
                 } else if (child.node_type == .self_parameter) {
                     const name: IdentifierKind = .self;
-                    break :blk .{ .pname = name, .ptype = null };
+                    parser.print_source(child.node);
+                    break :blk .{ .pname = name, .ptype = .self };
                 } else if (child.node_type == .variadic_parameter) {
                     @panic("todo");
                 } else { // _type

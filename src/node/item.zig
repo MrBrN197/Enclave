@@ -21,23 +21,11 @@ pub const IdentifierKind = union(enum) {
 
     pub fn format(self: Self, comptime _: []const u8, _: fmt.FormatOptions, writer: anytype) !void {
         switch (self) {
-            .text => |name| {
-                return fmt.format(
-                    writer,
-                    "{s}",
-                    .{name},
-                );
-            },
-            .scoped => |pathbuf| {
-                try fmt.format(writer, "{s}", .{pathbuf.str()});
-            },
-
             .discarded => try fmt.format(writer, "_", .{}),
             .matched => |matched| try fmt.format(writer, "{s}", .{matched}),
-            else => |tag| {
-                eprintln("\n\ntext: `{s}`\n\n", .{@tagName(tag)});
-                @panic("todo");
-            },
+            .scoped => |pathbuf| try fmt.format(writer, "{s}", .{pathbuf.str()}),
+            .self => try fmt.format(writer, "self", .{}),
+            .text => |name| return fmt.format(writer, "{s}", .{name}),
         }
     }
 };
@@ -125,6 +113,7 @@ pub const NodeItem = struct {
             params: []const Param,
             return_type: TypeKind,
             generics: ?std.ArrayList(TypeKind),
+            bounds: ?std.StringArrayHashMap(std.ArrayList(TypeKind)),
 
             pub const Param = struct {
                 name: ?IdentifierKind,
@@ -147,9 +136,17 @@ pub const NodeItem = struct {
                     }
                 }
             };
+
+            pub fn get_bounds(self: *const @This(), type_param_identifier: []const u8) ?[]const TypeKind {
+                if (self.bounds) |bounds| {
+                    const result = bounds.get(type_param_identifier) orelse return null;
+                    return result.items;
+                } else return null;
+            }
         };
 
         pub const Object = struct {
+            bounds: std.StringArrayHashMap(std.ArrayList(TypeKind)),
             fields: []Field,
             ordered: bool,
             generics: ?std.ArrayList(TypeKind),
@@ -195,8 +192,9 @@ pub const NodeItem = struct {
                 params: ?std.ArrayList(Procedure.Param),
                 return_type: ?*const TypeKind,
             },
-            ref: struct { child: ?*const TypeKind },
+            ref: struct { child: *const TypeKind }, // TODO: is_mut: bool
             tuple: std.ArrayList(TypeKind),
+            self,
 
             pub fn format(
                 self: TypeKind,
@@ -223,26 +221,32 @@ pub const NodeItem = struct {
                         }
                     },
                     .array => |array| {
-                        const brackets = array.length_expr orelse "[_]";
+                        const brackets = array.length_expr orelse "[]";
 
                         const typename = array.child;
 
                         try fmt.format(writer, "{s}{}", .{ brackets, typename.* });
                     },
                     .ref => |ref| {
-                        // FIX:
-                        assert(ref.child != null);
-
-                        try fmt.format(writer, "*const {}", .{ref.child.?.*});
+                        try fmt.format(writer, "*const {}", .{ref.child});
                     },
 
-                    // .dynamic => @panic("todo"),
                     .generic => |generic| try fmt.format(writer, "{s}", .{generic.name}),
                     .none => try fmt.format(writer, "void", .{}),
                     .no_return => @panic("todo"),
-                    .proc => try fmt.format(writer, "fn(void) void", .{}), // FIX:
-
-                    else => @panic("todo"),
+                    .proc => |procedure| {
+                        try fmt.format(writer, "fn(", .{});
+                        const args = procedure.params.?;
+                        for (args.items) |buf| try fmt.format(writer, "{},", .{buf});
+                        try fmt.format(writer, ") ", .{});
+                        if (procedure.return_type) |rt| {
+                            try fmt.format(writer, "{}", .{rt});
+                        } else {
+                            try fmt.format(writer, "void", .{});
+                        }
+                    },
+                    .self => try fmt.format(writer, "Self", .{}),
+                    .dynamic => @panic("todo:"),
                 }
             }
         };
@@ -316,9 +320,16 @@ pub const NodeItem = struct {
                 // TODO: visibility
 
                 if (data.generics) |generics| {
-                    try fmt.format(writer, "// ", .{});
-                    for (generics.items) |generic| try fmt.format(writer, "{s}: type,", .{generic});
-                    try fmt.format(writer, "\n", .{});
+                    for (generics.items) |generic| {
+                        try fmt.format(writer, "// ", .{});
+                        assert(generic == .identifier);
+                        try fmt.format(writer, "{s}: ", .{generic});
+
+                        if (data.get_bounds(generic.identifier.text)) |bounds|
+                            for (bounds) |bound| try fmt.format(writer, "{}, ", .{bound});
+
+                        try fmt.format(writer, "\n", .{});
+                    }
                 }
                 try fmt.format(
                     writer,
@@ -326,6 +337,7 @@ pub const NodeItem = struct {
                     .{name},
                 );
                 try fmt.format(writer, "(", .{});
+
                 for (data.params) |param| try fmt.format(writer, "{},", .{param});
 
                 try fmt.format(writer, ") ", .{});
