@@ -1,7 +1,5 @@
-const root = @import("../root.zig");
 const std = @import("std");
 
-const eql = root.eql;
 const fmt = std.fmt;
 
 const mem = std.mem;

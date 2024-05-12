@@ -1,6 +1,4 @@
 const c = @import("./c.zig");
-const NodeItem = @import("./node/types.zig").NodeItem;
-const TypeItem = @import("./node/types.zig").NodeItem.Data.TypeItem;
 const root = @import("./root.zig");
 const std = @import("std");
 const tsnode = @import("./node.zig");
@@ -9,18 +7,20 @@ const assert = std.debug.assert;
 const eprintln = root.eprintln;
 const eprint = root.eprint;
 const mem = std.mem;
+
+const Module = @import("./node/item.zig").Module;
+const NodeItem = @import("./node/types.zig").NodeItem;
 const Node = tsnode.Node;
-const Item = @import("./node/types.zig");
-const Module = @import("./node/types.zig").Module;
+const TypeItem = @import("./node/types.zig").NodeItem.Data.TypeItem;
 
 pub const Parser = struct {
+    allocator: mem.Allocator,
     lines_iter: Lines,
     parser: ?*c.TSParser,
     tree: ?*c.TSTree,
-    allocator: mem.Allocator,
 
-    const Self = @This();
     const Lines = mem.SplitIterator(u8, .scalar);
+    const Self = @This();
 
     pub fn init(source_code: []const u8, allocator: mem.Allocator) @This() {
         const parser = c.ts_parser_new();
@@ -73,8 +73,8 @@ pub const Parser = struct {
     }
 
     const ParseResult = struct {
-        parserd_module: ParsedModule,
         filepath: []const u8,
+        parserd_module: ParsedModule,
     };
 
     pub fn parseFiles(allocator: std.mem.Allocator, filepaths: []const []const u8) !std.ArrayList(ParseResult) {
@@ -119,10 +119,9 @@ pub const Parser = struct {
 
         var collect = std.ArrayList(NodeItem).init(self.allocator);
         const ctx = .{
-            .modules = &[_]Module{},
-
-            .parser = self,
             .items = &collect,
+            .modules = &[_]Module{},
+            .parser = self,
         };
 
         var current_node = Node.init_with_context(self.allocator, root_node, ctx);

@@ -1,14 +1,21 @@
+const assert = std.debug.assert;
+const eprintln = root.eprintln;
+const fmt = std.fmt;
+const mem = std.mem;
 const path = @import("./path.zig");
+const procedure = @import("./items/procedure.zig");
 const root = @import("../root.zig");
 const std = @import("std");
+const str = @import("../str.zig");
 
-const assert = std.debug.assert;
-const fmt = std.fmt;
-const is_empty = root.is_empty;
-const mem = std.mem;
-const eprintln = root.eprintln;
 const Buf = path.Buf;
 const ImportPath = path.ImportPath;
+pub const Enum = @import("./items/object.zig").Enum;
+pub const Import = @import("./items/import.zig").Import;
+pub const Module = @import("./items/module.zig").Module;
+pub const Object = @import("./items/object.zig").Object;
+pub const Procedure = @import("./items/procedure.zig").Procedure;
+pub const TypeKind = @import("./types.zig").TypeKind;
 
 pub const IdentifierKind = union(enum) {
     discarded, // FIX: '_'
@@ -28,6 +35,10 @@ pub const IdentifierKind = union(enum) {
             .text => |name| return fmt.format(writer, "{s}", .{name}),
         }
     }
+};
+
+pub const TypeItem = struct {
+    kind: TypeKind,
 };
 
 pub const NodeItem = struct {
@@ -56,18 +67,8 @@ pub const NodeItem = struct {
         pub const FnSignature = struct {
             bounds: std.StringArrayHashMap(std.ArrayList(TypeKind)),
             generics: ?std.ArrayList(TypeKind),
-            params: std.ArrayList(Procedure.Param),
+            params: std.ArrayList(procedure.Param),
             return_type: ?TypeKind,
-        };
-
-        pub const Import = struct {
-            import_paths: std.ArrayList(Buf),
-
-            const Self = @This();
-
-            pub fn init(import_paths: std.ArrayList(Buf)) Self {
-                return Self{ .import_paths = import_paths };
-            }
         };
 
         pub const Constant = struct {
@@ -82,193 +83,10 @@ pub const NodeItem = struct {
             implementor: IdentifierKind,
             for_interface: ?IdentifierKind,
         };
-
-        pub const Module = struct {
-            items: std.ArrayList(NodeItem),
-
-            const Item = NodeItem;
-            const Self = @This();
-
-            pub fn init(allocator: std.mem.Allocator) Self {
-                return .{
-                    .items = std.ArrayList(Item).init(allocator),
-                };
-            }
-
-            pub fn insertItem(self: *Self, item: Item) void {
-                self.items.append(item) catch unreachable;
-            }
-        };
-
-        pub const Enum = struct {
-            variants: []const Variant,
-
-            pub const Variant = struct {
-                name: []const u8,
-                // typekind: TypeKind, //TODO:
-
-                const Self = @This();
-
-                pub fn format(
-                    self: Self,
-                    comptime _: []const u8,
-                    _: fmt.FormatOptions,
-                    writer: anytype,
-                ) !void {
-                    return fmt.format(writer, "{s}", .{self.name}); //FIX:
-                }
-            };
-        };
-
-        pub const Procedure = struct {
-            bounds: ?std.StringArrayHashMap(std.ArrayList(TypeKind)),
-            generics: ?std.ArrayList(TypeKind),
-            params: []const Param,
-            return_type: TypeKind,
-
-            pub const Param = struct {
-                name: ?IdentifierKind,
-                typekind: ?TypeKind,
-
-                const Self = @This();
-                pub fn format(
-                    self: Self,
-                    comptime _: []const u8,
-                    _: fmt.FormatOptions,
-                    writer: anytype,
-                ) !void {
-                    assert(self.typekind != null);
-                    const ty = self.typekind.?;
-
-                    if (self.name) |name| {
-                        return fmt.format(writer, "{}: {}", .{ name, ty });
-                    } else {
-                        return fmt.format(writer, "{}", .{ty});
-                    }
-                }
-            };
-
-            pub fn get_bounds(self: *const @This(), type_param_identifier: []const u8) ?[]const TypeKind {
-                if (self.bounds) |bounds| {
-                    const result = bounds.get(type_param_identifier) orelse return null;
-                    return result.items;
-                } else return null;
-            }
-        };
-
-        pub const Object = struct {
-            bounds: std.StringArrayHashMap(std.ArrayList(TypeKind)),
-            fields: []Field,
-            ordered: bool,
-            generics: ?std.ArrayList(TypeKind),
-
-            pub const Field = union(enum) {
-                tuple: TypeKind,
-                field: struct {
-                    name: []const u8,
-                    type_kind: TypeKind,
-                },
-
-                pub fn format(
-                    self: Field,
-                    comptime _: []const u8,
-                    _: fmt.FormatOptions,
-                    writer: anytype,
-                ) !void {
-                    switch (self) {
-                        .tuple => @panic("todo"),
-                        .field => |f| {
-                            try fmt.format(
-                                writer,
-                                "\t{s}: {},", // FIX:
-                                .{ f.name, f.type_kind },
-                            );
-                        },
-                    }
-                }
-            };
-        };
-
-        pub const TypeKind = union(enum) {
-            array: struct { length_expr: ?[]const u8, child: *const TypeKind },
-            dynamic,
-            generic: struct {
-                name: IdentifierKind,
-            },
-            identifier: IdentifierKind,
-            none,
-            no_return: void,
-            primitive: enum { u16, u32, u64, u8, u128, usize, i16, i32, i64, i8, i128, isize, f32, f64, char, str, bool }, // FIX:
-            proc: struct {
-                params: ?std.ArrayList(Procedure.Param),
-                return_type: ?*const TypeKind,
-            },
-            ref: struct { child: *const TypeKind }, // TODO: is_mut: bool
-            tuple: std.ArrayList(TypeKind),
-            self,
-
-            pub fn format(
-                self: TypeKind,
-                comptime _: []const u8,
-                _: fmt.FormatOptions,
-                writer: anytype,
-            ) !void {
-                switch (self) {
-                    .identifier => |id| try fmt.format(writer, "{s}", .{id}),
-                    .tuple => |tuple_items| {
-                        assert(tuple_items.items.len > 0);
-                        try fmt.format(writer, "struct {{", .{});
-                        for (tuple_items.items, 0..) |ty_kind, idx| {
-                            try fmt.format(writer, "{s}", .{ty_kind});
-                            if (idx != (tuple_items.items.len - 1)) try fmt.format(writer, ", ", .{});
-                        }
-                        try fmt.format(writer, "}} ", .{});
-                    },
-                    .primitive => |prim| {
-                        switch (prim) {
-                            .char => try fmt.format(writer, "u8", .{}),
-                            .str => try fmt.format(writer, "[]const u8", .{}),
-                            else => try fmt.format(writer, "{s}", .{@tagName(prim)}),
-                        }
-                    },
-                    .array => |array| {
-                        const brackets = array.length_expr orelse "[]";
-
-                        const typename = array.child;
-
-                        try fmt.format(writer, "{s}{}", .{ brackets, typename.* });
-                    },
-                    .ref => |ref| {
-                        try fmt.format(writer, "*const {}", .{ref.child});
-                    },
-
-                    .generic => |generic| try fmt.format(writer, "{s}", .{generic.name}),
-                    .none => try fmt.format(writer, "void", .{}),
-                    .no_return => @panic("todo"),
-                    .proc => |procedure| {
-                        try fmt.format(writer, "fn(", .{});
-                        const args = procedure.params.?;
-                        for (args.items) |buf| try fmt.format(writer, "{},", .{buf});
-                        try fmt.format(writer, ") ", .{});
-                        if (procedure.return_type) |rt| {
-                            try fmt.format(writer, "{}", .{rt});
-                        } else {
-                            try fmt.format(writer, "void", .{});
-                        }
-                    },
-                    .self => try fmt.format(writer, "Self", .{}),
-                    .dynamic => @panic("todo:"),
-                }
-            }
-        };
-
-        pub const TypeItem = struct {
-            kind: TypeKind,
-        };
     };
 
     pub fn init(data: Data, name: ?[]const u8) NodeItem {
-        if (name) |str| assert(!is_empty(str));
+        if (name) |s| assert(!str.isEmpty(s));
 
         return NodeItem{
             .data = data,
@@ -276,6 +94,7 @@ pub const NodeItem = struct {
             .annotations = null, // TODO:
         };
     }
+
     pub fn initAlloc(allocator: std.mem.Allocator, data: Data, name: ?[]const u8) std.mem.Allocator.Error!*NodeItem {
         const node = NodeItem.init(data, name);
 
@@ -289,7 +108,7 @@ pub const NodeItem = struct {
             .import_item => |import| {
                 for (import.import_paths.items) |p| {
                     const basename = ImportPath.basename(p.str());
-                    if (root.eql(basename, "*")) {
+                    if (str.eql(basename, "*")) {
                         std.log.warn("todo: path {s}", .{p.str()});
                         continue;
                     }

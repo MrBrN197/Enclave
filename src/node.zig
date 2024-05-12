@@ -1,34 +1,32 @@
 const c = @import("./c.zig");
+const mem = @import("std").mem;
 const node_types = @import("./node/types.zig");
 const parse = @import("./parser.zig"); // TODO:
+const path = @import("./node/path.zig");
+const procedure = @import("./node/items/procedure.zig");
 const root = @import("./root.zig");
 const std = @import("std");
-const path = @import("./node/path.zig");
+const str = @import("./str.zig");
+const items = @import("./node/item.zig");
+const object = @import("./node/items/object.zig");
 
 const assert = std.debug.assert;
 const eprintln = root.eprintln;
 const eprint = root.eprint;
-const eql = root.eql;
-const is_empty = root.is_empty;
-const mem = std.mem;
+
+const Allocator = std.mem.Allocator;
+const Buf = path.Buf;
 const Parser = parse.Parser;
 const Writer = @TypeOf(std.io.getStdOut().writer());
-const Allocator = std.mem.Allocator;
-
 pub const IdentifierKind = node_types.IdentifierKind;
+pub const Import = @import("./node/item.zig").Import;
 pub const ImportPath = node_types.ImportPath;
 pub const ImportPathParser = path.ImportPathParser;
-pub const Module = node_types.Module;
+pub const Module = items.Module;
 pub const NodeItem = node_types.NodeItem;
 pub const NodeType = node_types.NodeType;
 pub const PathParser = path.PathParser;
-pub const TypeKind = NodeItem.Data.TypeKind;
-pub const Import = NodeItem.Data.Import;
-const Buf = path.Buf;
-
-fn out(writer: Writer, comptime str: []const u8, args: anytype) void {
-    return std.fmt.format(writer, str, args) catch unreachable;
-}
+pub const TypeKind = node_types.TypeKind;
 
 pub fn get_child_named(node: c.TSNode, idx: u32) ?c.TSNode {
     const result = c.ts_node_named_child(node, idx);
@@ -38,7 +36,7 @@ pub fn get_child_named(node: c.TSNode, idx: u32) ?c.TSNode {
 pub fn is_of_type(node: c.TSNode, name: []const u8) bool {
     const c_node_name = c.ts_node_type(node);
     const node_name = c_node_name[0..mem.len(c_node_name)];
-    return eql(node_name, name);
+    return str.eql(node_name, name);
 }
 
 pub fn get_type(node: c.TSNode, allocator: std.mem.Allocator) []const u8 { // TODO: remove
@@ -76,11 +74,11 @@ pub const Node = struct {
         const ptr = allocator.create(Self) catch unreachable;
         ptr.* = Self{
             .allocator = allocator,
+            .ctx = ctx,
             .node = node,
             .node_type = node_type,
             .row_end = .{ point_end.row, point_end.column },
             .row_start = .{ point_start.row, point_start.column },
-            .ctx = ctx,
         };
         return ptr;
     }
@@ -124,12 +122,8 @@ pub const Node = struct {
         var result = Module.init(self.allocator); // FIX:
 
         for (children.items) |child| {
+            eprintln("<---{s}----->", .{@tagName(child.node_type)});
             child.extract_node_items();
-
-            // eprintln(
-            //     "child.len: {} -> {}\n",
-            //     .{ child.ctx.items.items.len, self.ctx.items.items.len },
-            // );
         }
 
         for (self.ctx.items.items) |item| result.insertItem(item);
@@ -330,7 +324,7 @@ pub const Node = struct {
             const allocator = fba.allocator();
 
             // NOTE: skip line/block comments
-            if (eql(get_type(child, allocator), "line_comment")) continue; // FIX:
+            if (str.eql(get_type(child, allocator), "line_comment")) continue; // FIX:
 
             children.append(
                 Node.init_with_context(
@@ -359,7 +353,7 @@ pub const Node = struct {
             const allocator = fba.allocator();
 
             // NOTE: skip line/block comments
-            if (eql(get_type(next_sibling, allocator), "line_comment")) continue; // FIX:
+            if (str.eql(get_type(next_sibling, allocator), "line_comment")) continue; // FIX:
 
             children.append(
                 Node.init_with_context(self.allocator, next_sibling, self.ctx),
@@ -446,7 +440,7 @@ pub const Node = struct {
             } else break :blk null;
         };
 
-        var fields = std.ArrayList(NodeItem.Data.Object.Field).init(self.allocator);
+        var fields = std.ArrayList(object.Field).init(self.allocator);
         var ordered = false;
 
         if (self.get_field("body")) |body_field| {
@@ -463,7 +457,7 @@ pub const Node = struct {
                             const struct_field_type_field = decl.get_field_unchecked("type"); //  $_type
                             const struct_field_type = struct_field_type_field.extract_type_ref();
 
-                            fields.append(NodeItem.Data.Object.Field{ .field = .{
+                            fields.append(object.Field{ .field = .{
                                 .name = struct_field_name,
                                 .type_kind = struct_field_type,
                             } }) catch unreachable;
@@ -489,12 +483,12 @@ pub const Node = struct {
                     const type_field = child.get_field_unchecked("type");
                     const type_kind = type_field.extract_type_ref();
 
-                    fields.append(NodeItem.Data.Object.Field{ .tuple = type_kind }) catch unreachable;
+                    fields.append(object.Field{ .tuple = type_kind }) catch unreachable;
                 }
             } else unreachable;
         }
 
-        const object = NodeItem.Data{
+        const object_data = NodeItem.Data{
             .object_item = .{
                 .fields = fields.items,
                 .generics = generics,
@@ -503,7 +497,7 @@ pub const Node = struct {
             },
         };
 
-        const result = NodeItem.init(object, struct_name.text);
+        const result = NodeItem.init(object_data, struct_name.text);
         return result;
     }
 
@@ -707,7 +701,7 @@ pub const Node = struct {
         return result;
     }
 
-    pub fn extract_type_ref(self: *const Self) NodeItem.Data.TypeKind {
+    pub fn extract_type_ref(self: *const Self) TypeKind {
         switch (self.node_type) {
             .abstract_type => {
                 const result = self.extract_abstract_type();
@@ -854,23 +848,23 @@ pub const Node = struct {
 
                 const text = self.ctx.parser.node_to_string_alloc(self.node, self.allocator);
 
-                if (eql(text, "u16")) return .{ .primitive = .u16 };
-                if (eql(text, "u32")) return .{ .primitive = .u32 };
-                if (eql(text, "u64")) return .{ .primitive = .u64 };
-                if (eql(text, "u8")) return .{ .primitive = .u8 };
-                if (eql(text, "i16")) return .{ .primitive = .i16 };
-                if (eql(text, "i32")) return .{ .primitive = .i32 };
-                if (eql(text, "i64")) return .{ .primitive = .i64 };
-                if (eql(text, "i8")) return .{ .primitive = .i8 };
-                if (eql(text, "char")) return .{ .primitive = .char };
-                if (eql(text, "str")) return .{ .primitive = .str };
-                if (eql(text, "bool")) return .{ .primitive = .bool };
-                if (eql(text, "u128")) return .{ .primitive = .u128 };
-                if (eql(text, "i128")) return .{ .primitive = .i128 };
-                if (eql(text, "isize")) return .{ .primitive = .isize };
-                if (eql(text, "usize")) return .{ .primitive = .usize };
-                if (eql(text, "f32")) return .{ .primitive = .f32 };
-                if (eql(text, "f64")) return .{ .primitive = .f64 };
+                if (str.eql(text, "u16")) return .{ .primitive = .u16 };
+                if (str.eql(text, "u32")) return .{ .primitive = .u32 };
+                if (str.eql(text, "u64")) return .{ .primitive = .u64 };
+                if (str.eql(text, "u8")) return .{ .primitive = .u8 };
+                if (str.eql(text, "i16")) return .{ .primitive = .i16 };
+                if (str.eql(text, "i32")) return .{ .primitive = .i32 };
+                if (str.eql(text, "i64")) return .{ .primitive = .i64 };
+                if (str.eql(text, "i8")) return .{ .primitive = .i8 };
+                if (str.eql(text, "char")) return .{ .primitive = .char };
+                if (str.eql(text, "str")) return .{ .primitive = .str };
+                if (str.eql(text, "bool")) return .{ .primitive = .bool };
+                if (str.eql(text, "u128")) return .{ .primitive = .u128 };
+                if (str.eql(text, "i128")) return .{ .primitive = .i128 };
+                if (str.eql(text, "isize")) return .{ .primitive = .isize };
+                if (str.eql(text, "usize")) return .{ .primitive = .usize };
+                if (str.eql(text, "f32")) return .{ .primitive = .f32 };
+                if (str.eql(text, "f64")) return .{ .primitive = .f64 };
 
                 unreachable;
             },
@@ -985,15 +979,15 @@ pub const Node = struct {
 
     fn extract_parameters(
         self: *const Self,
-    ) std.ArrayList(NodeItem.Data.Procedure.Param) {
+    ) std.ArrayList(procedure.Param) {
         const parser = self.ctx.parser;
-        var result = std.ArrayList(NodeItem.Data.Procedure.Param).init(self.allocator);
+        var result = std.ArrayList(procedure.Param).init(self.allocator);
 
         const children = self.get_children_named();
         for (children.items) |child| {
             if (child.node_type == .attribute_item) unreachable;
 
-            const NameType = struct { pname: ?IdentifierKind, ptype: ?NodeItem.Data.TypeKind };
+            const NameType = struct { pname: ?IdentifierKind, ptype: ?TypeKind };
             const name_type: NameType = blk: {
                 if (child.node_type == .parameter) {
 
@@ -1004,7 +998,7 @@ pub const Node = struct {
                     const text = parser.node_to_string_alloc(tsnode, self.allocator);
 
                     const name: IdentifierKind = blk_name: {
-                        if (eql(text, "_")) break :blk_name .discarded; //FIX:
+                        if (str.eql(text, "_")) break :blk_name .discarded; //FIX:
 
                         const pattern_field = Node.init_with_context(self.allocator, tsnode, self.ctx); // ( $_pattern | $self )
 
@@ -1030,7 +1024,7 @@ pub const Node = struct {
                 } else { // _type
                     const text = parser.node_to_string_alloc(child.node, self.allocator);
 
-                    if (eql(text, "_")) break :blk .{
+                    if (str.eql(text, "_")) break :blk .{
                         .pname = IdentifierKind{ .text = text },
                         .ptype = null,
                     } else {
@@ -1047,7 +1041,7 @@ pub const Node = struct {
             const param_name = name_type.pname;
             const param_kind = name_type.ptype;
 
-            result.append(NodeItem.Data.Procedure.Param{
+            result.append(procedure.Param{
                 .name = param_name,
                 .typekind = param_kind,
             }) catch unreachable; // FIX:
@@ -1157,11 +1151,11 @@ pub const Node = struct {
         return result;
     }
 
-    fn extract_enum_variants(self: *const @This()) std.ArrayList(NodeItem.Data.Enum.Variant) {
+    fn extract_enum_variants(self: *const @This()) std.ArrayList(object.Enum.Variant) {
         const parser = self.ctx.parser;
         const children = self.get_children_named(); // FIX:
 
-        var variants = std.ArrayList(NodeItem.Data.Enum.Variant).init(self.allocator); // FIX:
+        var variants = std.ArrayList(object.Enum.Variant).init(self.allocator); // FIX:
 
         for (children.items) |child| {
             // TODO: $attribute_item;
@@ -1177,7 +1171,7 @@ pub const Node = struct {
 
             // TODO: if child.get_field("value", $_expression?
 
-            const variant = NodeItem.Data.Enum.Variant{
+            const variant = object.Enum.Variant{
                 .name = name,
             };
             variants.append(variant) catch unreachable;
@@ -1246,27 +1240,27 @@ pub const Node = struct {
     fn extract_scoped_identifier(_: *const Self, _: *const Parser) void {
         @panic("todo");
 
-        // assert(eql(get_type(self), "scoped_identifier"));
+        // assert(str.eql(get_type(self), "scoped_identifier"));
 
         // if (self.get_field("path")) |field| {
         //     const field_sym = get_type(field);
 
-        //     if (eql(field_sym, "self")) {
+        //     if (str.eql(field_sym, "self")) {
         //         field.write_to(parser);
-        //     } else if (eql(field_sym, "identifier")) {
+        //     } else if (str.eql(field_sym, "identifier")) {
         //         field.write_to(parser);
-        //     } else if (eql(field_sym, "metavariable")) {
+        //     } else if (str.eql(field_sym, "metavariable")) {
         //         //         out(writer, "{s}", .{parser.node_to_string(field_sym.node, self.allocator)});
         //         field.write_to(parser);
-        //     } else if (eql(field_sym, "super")) {
+        //     } else if (str.eql(field_sym, "super")) {
         //         field.write_to(parser);
-        //     } else if (eql(field_sym, "crate")) {
+        //     } else if (str.eql(field_sym, "crate")) {
         //         field.write_to(parser);
-        //     } else if (eql(field_sym, "scoped_identifier")) {
+        //     } else if (str.eql(field_sym, "scoped_identifier")) {
         //         field.write_to(parser);
-        //     } else if (eql(field_sym, "bracketed_type")) {
+        //     } else if (str.eql(field_sym, "bracketed_type")) {
         //         field.write_to(parser);
-        //     } else if (eql(field_sym, "generic_type")) {
+        //     } else if (str.eql(field_sym, "generic_type")) {
         //         field.write_to(parser);
         //     } else {
         //         unreachable;
@@ -1276,9 +1270,9 @@ pub const Node = struct {
         // const name_field = self.get_field("name") orelse unreachable; // choice($.identifier, $.super)),
 
         // const name_sym = get_type(name_field);
-        // if (eql(name_sym, "identifier")) {
+        // if (str.eql(name_sym, "identifier")) {
         //     name_field.write_to(parser);
-        // } else if (eql(name_sym, "super")) {
+        // } else if (str.eql(name_sym, "super")) {
         //     name_field.write_to(parser);
         // } else unreachable;
     }
@@ -1374,7 +1368,7 @@ pub const Node = struct {
         assert(self.node_type == .function_type); // todo: remove
 
         // TODO: $for_lifetimes?
-        // var params = std.ArrayList(NodeItem.ItemData.Procedure.Param).init(self.allocator);
+        // var params = std.ArrayList(procedure.Param).init(self.allocator);
 
         const parameters_field = self.get_field_unchecked("parameters"); // TODO: $parameters
         const params = parameters_field.extract_parameters();
@@ -1403,9 +1397,9 @@ pub const Node = struct {
 
                     assert(typekind == .identifier);
 
-                    assert(eql(typekind.identifier.text, "Fn") or
-                        eql(typekind.identifier.text, "FnOnce") or
-                        eql(typekind.identifier.text, "FnMut"));
+                    assert(str.eql(typekind.identifier.text, "Fn") or
+                        str.eql(typekind.identifier.text, "FnOnce") or
+                        str.eql(typekind.identifier.text, "FnMut"));
                 }
             };
 
@@ -1426,7 +1420,7 @@ pub const Node = struct {
 
                 const text = parser.node_to_string_alloc(child.node, allocator);
 
-                if (eql(text, "unsafe")) continue;
+                if (str.eql(text, "unsafe")) continue;
 
                 // TODO:
                 // 'async',
