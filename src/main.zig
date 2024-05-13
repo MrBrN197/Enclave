@@ -85,7 +85,7 @@ pub fn convert_file(filepaths: []const []const u8, writer: anytype) void {
             .{ .exclusive = false },
         ) catch unreachable; // FIX:
 
-        for (parse_result.parserd_module.module.items.items) |item| {
+        for (parse_result.parserd_module.module.node_items.items) |item| {
             item.serialize(outfile.writer()) catch unreachable;
             item.serialize(writer) catch unreachable;
         }

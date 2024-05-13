@@ -39,6 +39,10 @@ pub const IdentifierKind = union(enum) {
 
 pub const TypeItem = struct {
     kind: TypeKind,
+
+    pub fn serialize(self: *const @This(), writer: anytype, name: []const u8) !void {
+        try fmt.format(writer, "//type\nconst {s} = {};\n", .{ name, self.kind });
+    }
 };
 
 pub const NodeItem = struct {
@@ -57,23 +61,69 @@ pub const NodeItem = struct {
         module_item: Module,
         object_item: Object,
         procedure_item: Procedure,
-        trait_item: struct {
+        trait_item: Trait,
+        type_item: TypeItem,
+
+        const Trait = struct {
             body: Module,
             bounds: std.StringArrayHashMap(std.ArrayList(TypeKind)),
             generics: ?std.ArrayList(TypeKind),
-        },
-        type_item: TypeItem,
+
+            pub fn serialize(self: *const @This(), writer: anytype, name: []const u8) @TypeOf(writer).Error!void {
+                try fmt.format(writer, "// {s} Interface\n", .{name});
+                try fmt.format(writer, "const {s} = struct {{\n", .{name});
+                try fmt.format(writer, "const Self = @This();\n", .{});
+                for (self.body.node_items.items) |item| {
+                    try item.serialize(writer); //FIX
+                    @panic("fix: inferred error");
+                }
+
+                try fmt.format(writer, "}};\n", .{});
+            }
+
+            pub fn format(self: @This(), comptime _: []const u8, _: fmt.FormatOptions, writer: anytype) anyerror!void {
+                _ = writer; // autofix
+                _ = self; // autofix
+            }
+        };
 
         pub const FnSignature = struct {
             bounds: std.StringArrayHashMap(std.ArrayList(TypeKind)),
             generics: ?std.ArrayList(TypeKind),
             params: std.ArrayList(procedure.Param),
             return_type: ?TypeKind,
+
+            pub fn serialize(self: *const @This(), writer: anytype, name: []const u8) !void {
+                // TODO: bounds
+
+                try fmt.format(writer, "{s}Fn: *const fn(", .{name});
+                for (self.params.items) |param| try fmt.format(writer, "{},", .{param.typekind.?});
+                try fmt.format(writer, ") ", .{});
+                if (self.return_type) |rt| {
+                    try fmt.format(writer, "{}", .{rt});
+                } else {
+                    try fmt.format(writer, "void", .{});
+                }
+                try fmt.format(writer, ",\n", .{});
+            }
         };
 
         pub const Constant = struct {
             type_kind: TypeKind,
             value_expr: ?[]const u8,
+
+            pub fn serialize(self: *const @This(), writer: anytype, name: []const u8) @TypeOf(writer).Error!void {
+                assert(self.value_expr != null);
+
+                const val = self.value_expr.?;
+
+                try fmt.format(writer, "const {s}: {} = undefined; // FIX: \n// {s};", .{
+                    name,
+                    self.type_kind,
+                    val,
+                });
+                try fmt.format(writer, "\n", .{});
+            }
         };
 
         pub const Impl = struct {
@@ -82,6 +132,12 @@ pub const NodeItem = struct {
             generics: ?std.ArrayList(TypeKind),
             implementor: IdentifierKind,
             for_interface: ?IdentifierKind,
+
+            pub fn serialize(self: *const Impl, writer: anytype) !void {
+                _ = self; // autofix
+                _ = writer; // autofix
+                @panic("todo:impl");
+            }
         };
     };
 
@@ -103,173 +159,21 @@ pub const NodeItem = struct {
         return ptr;
     }
 
-    pub fn serialize(self: *const NodeItem, writer: anytype) !void {
+    pub fn serialize(
+        self: *const @This(),
+        writer: anytype,
+    ) @TypeOf(writer).Error!void {
         switch (self.data) {
-            .import_item => |import| {
-                for (import.import_paths.items) |p| {
-                    const basename = ImportPath.basename(p.str());
-                    if (str.eql(basename, "*")) {
-                        std.log.warn("todo: path {s}", .{p.str()});
-                        continue;
-                    }
-                    try fmt.format(writer, "const {s} = {s};\n", .{ basename, p.str() });
-                }
-            },
-            .module_item => |mod| {
-                assert(self.name != null);
-
-                const name = self.name.?;
-
-                if (mod.items.items.len > 0) {
-                    try fmt.format(writer, "const {s} = struct {{ // TODO: Module  \n", .{name}); // FIX:
-                    for (mod.items.items) |item| try item.serialize(writer);
-                    try fmt.format(writer, "\n}};", .{});
-                } else {
-                    try fmt.format(writer, "const {s} = @import(\"{s}\");", .{ name, name });
-                }
-
-                try fmt.format(writer, "\n", .{});
-            },
-            .impl_item => |_| @panic("todo"),
-            .const_item => |item_data| {
-                assert(item_data.value_expr != null);
-
-                const val = item_data.value_expr.?;
-
-                try fmt.format(writer, "const {s}: {} = undefined; // FIX: \n// {s};", .{
-                    self.name.?,
-                    item_data.type_kind,
-                    val,
-                });
-                try fmt.format(writer, "\n", .{});
-            },
-            .procedure_item => |data| {
-                const name = self.name.?;
-                // TODO: visibility
-
-                if (data.generics) |generics| {
-                    for (generics.items) |generic| {
-                        try fmt.format(writer, "// ", .{});
-                        assert(generic == .identifier);
-                        try fmt.format(writer, "{s}: ", .{generic});
-
-                        if (data.get_bounds(generic.identifier.text)) |bounds|
-                            for (bounds) |bound| try fmt.format(writer, "{}, ", .{bound});
-
-                        try fmt.format(writer, "\n", .{});
-                    }
-                }
-                try fmt.format(
-                    writer,
-                    "fn {s}", // FIX:
-                    .{name},
-                );
-                try fmt.format(writer, "(", .{});
-
-                for (data.params) |param| try fmt.format(writer, "{},", .{param});
-
-                try fmt.format(writer, ") ", .{});
-
-                try fmt.format(writer, "{} {{\n", .{data.return_type});
-
-                for (data.params) |param| {
-                    if (param.name) |n| {
-                        try fmt.format(
-                            writer,
-                            \\    _ = {}; // autofix todo:
-                            \\
-                        ,
-                            .{n},
-                        );
-                    }
-                }
-                try fmt.format(
-                    writer,
-
-                    \\    @panic("todo: {s}");
-                    \\}}
-                    \\
-                ,
-                    .{name},
-                );
-            },
-            .object_item => |data| {
-                const name = self.name.?;
-
-                if (data.generics) |generics| {
-                    try fmt.format(writer, "// ", .{});
-                    for (generics.items) |generic| try fmt.format(writer, "{s}: type,", .{generic});
-                    try fmt.format(writer, "\n", .{});
-                }
-
-                var buffer = [_]u8{0} ** 4096;
-                var idx: usize = 0;
-
-                for (data.fields, 1..) |fld, i| {
-                    const written = try fmt.bufPrint(
-                        buffer[idx..],
-                        "\t{}",
-                        .{fld},
-                    );
-                    idx += written.len;
-
-                    if (i != data.fields.len) {
-                        idx += (try fmt.bufPrint(buffer[idx..], "\n", .{})).len;
-                    }
-                }
-
-                const fields_str = buffer[0..idx];
-
-                try fmt.format(
-                    writer,
-                    "" ++
-                        \\const {s} = struct {{
-                        \\{s}
-                        \\}};
-                        \\
-                    ,
-
-                    .{ name, fields_str },
-                );
-
-                try fmt.format(writer, "\n", .{});
-            },
-            .enum_item => |data| {
-                try fmt.format(writer, "const {s} = enum {{\n", .{self.name.?});
-                const variants = data.variants;
-
-                for (variants) |variant| try fmt.format(writer, "\t{},", .{variant});
-                try fmt.format(writer, "\n}};\n", .{});
-                // std.log.warn("unabled to serialize {s}\n", .{@tagName(tag)});
-            },
-            .type_item => |data| {
-                try fmt.format(writer, "//type\nconst {s} = {};\n", .{ self.name.?, data.kind });
-            },
-            .trait_item => |data| {
-                const item_name = self.name.?;
-
-                try fmt.format(writer, "// {s} Interface\n", .{item_name});
-                try fmt.format(writer, "const {s} = struct {{\n", .{item_name});
-                try fmt.format(writer, "const Self = @This();\n", .{});
-                for (data.body.items.items) |item| try item.serialize(writer);
-
-                try fmt.format(writer, "}};\n", .{});
-            },
-            .function_signature_item => |itemdata| {
-                const item_name = self.name.?;
-
-                // TODO: bounds
-
-                try fmt.format(writer, "{s}Fn: *const fn(", .{item_name});
-                for (itemdata.params.items) |param| try fmt.format(writer, "{},", .{param.typekind.?});
-                try fmt.format(writer, ") ", .{});
-                if (itemdata.return_type) |rt| {
-                    try fmt.format(writer, "{}", .{rt});
-                } else {
-                    try fmt.format(writer, "void", .{});
-                }
-                try fmt.format(writer, ",\n", .{});
-            },
+            .const_item => |cnst| try cnst.serialize(writer, self.name.?),
+            .enum_item => |enm| try enm.serialize(writer, self.name.?),
+            .function_signature_item => |fntype| try fntype.serialize(writer, self.name.?),
+            .impl_item => |impl| try impl.serialize(writer),
+            .import_item => |import| try import.serialize(writer),
+            .module_item => |mod| try mod.serialize(writer, self.name.?),
+            .object_item => |obj| try obj.serialize(writer, self.name.?),
+            .procedure_item => |proc| try proc.serialize(writer, self.name.?),
+            .trait_item => |trait| try trait.serialize(writer, self.name.?),
+            .type_item => |typ| try typ.serialize(writer, self.name.?),
         }
     }
 };

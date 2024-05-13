@@ -987,8 +987,7 @@ pub const Node = struct {
         for (children.items) |child| {
             if (child.node_type == .attribute_item) unreachable;
 
-            const NameType = struct { pname: ?IdentifierKind, ptype: ?TypeKind };
-            const name_type: NameType = blk: {
+            const name_type = blk: {
                 if (child.node_type == .parameter) {
 
                     // TODO: $mutable_specifier,
@@ -1014,36 +1013,32 @@ pub const Node = struct {
                     const type_field = child.get_field_unchecked("type"); //  $_type
                     const typename = type_field.extract_type_ref();
 
-                    break :blk .{ .pname = name, .ptype = typename };
+                    break :blk .{ name, typename };
                 } else if (child.node_type == .self_parameter) {
                     const name: IdentifierKind = .self;
                     parser.print_source(child.node);
-                    break :blk .{ .pname = name, .ptype = .self };
+                    break :blk .{ name, .self };
                 } else if (child.node_type == .variadic_parameter) {
                     @panic("todo");
                 } else { // _type
                     const text = parser.node_to_string_alloc(child.node, self.allocator);
 
-                    if (str.eql(text, "_")) break :blk .{
-                        .pname = IdentifierKind{ .text = text },
-                        .ptype = null,
+                    if (str.eql(text, "_")) {
+                        break :blk .{ IdentifierKind{ .text = text }, null };
                     } else {
-                        const typekind = child.extract_type_ref();
-
                         break :blk .{
-                            .ptype = typekind,
-                            .pname = null,
+                            null,
+                            child.extract_type_ref(),
                         };
                     }
                 }
             };
 
-            const param_name = name_type.pname;
-            const param_kind = name_type.ptype;
+            const param_name, const param_type = name_type;
 
             result.append(procedure.Param{
                 .name = param_name,
-                .typekind = param_kind,
+                .typekind = param_type,
             }) catch unreachable; // FIX:
         }
         return result;
@@ -1293,9 +1288,7 @@ pub const Node = struct {
         const import_item = Import.init(import_paths);
 
         const result = NodeItem.init(
-            .{
-                .import_item = import_item,
-            },
+            .{ .import_item = import_item },
             null,
         );
 
