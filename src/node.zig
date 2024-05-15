@@ -778,7 +778,7 @@ pub const Node = struct {
                 }
 
                 const result = TypeKind{
-                    .generic = .{ .name = name.identifier },
+                    .identifier = name.identifier,
                 };
                 return result;
             },
@@ -1183,7 +1183,6 @@ pub const Node = struct {
 
         const trait_identifier = trait: {
             if (self.get_field("trait")) |field| {
-                // ($_type_identifier | $scoped_type_identifier | $generic_type)
                 break :trait field.extract_type_ref().identifier;
             } else break :trait null;
         };
@@ -1303,7 +1302,7 @@ pub const Node = struct {
             .generic_type => {
                 const type_kind = trait_field.extract_type_ref();
 
-                assert(type_kind == .generic);
+                assert(type_kind == .identifier);
                 return type_kind;
             },
             .function_type => {

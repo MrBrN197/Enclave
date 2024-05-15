@@ -28,6 +28,7 @@ pub const Impl = struct {
 
 pub const IdentifierKind = union(enum) {
     discarded, // FIX: '_'
+    generic: struct { name: []const u8 },
     matched: []const u8, // TODO:
     scoped: Buf,
     self,
@@ -38,6 +39,7 @@ pub const IdentifierKind = union(enum) {
     pub fn format(self: Self, comptime _: []const u8, _: fmt.FormatOptions, writer: anytype) !void {
         switch (self) {
             .discarded => try fmt.format(writer, "_", .{}),
+            .generic => |generic| try fmt.format(writer, "{s}", .{generic.name}),
             .matched => |matched| try fmt.format(writer, "{s}", .{matched}),
             .scoped => |pathbuf| try fmt.format(writer, "{s}", .{pathbuf.str()}),
             .self => try fmt.format(writer, "self", .{}),

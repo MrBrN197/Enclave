@@ -339,9 +339,6 @@ pub const NodeType = enum {
 pub const TypeKind = union(enum) {
     array: struct { length_expr: ?[]const u8, child: *const TypeKind },
     dynamic,
-    generic: struct {
-        name: IdentifierKind,
-    },
     identifier: IdentifierKind,
     none,
     no_return: void,
@@ -389,7 +386,6 @@ pub const TypeKind = union(enum) {
                 try fmt.format(writer, "*const {}", .{ref.child});
             },
 
-            .generic => |generic| try fmt.format(writer, "{s}", .{generic.name}),
             .none => try fmt.format(writer, "void", .{}),
             .no_return => @panic("todo"),
             .proc => |proc| {
