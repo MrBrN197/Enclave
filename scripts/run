@@ -1,5 +1,11 @@
 #! /usr/bin/bash
 
-zig build run -freference-trace --prominent-compile-errors -- $@
-printf "Build exit code: '%s'\n" $?
+zig build -freference-trace --prominent-compile-errors
+build_status=$?
+if [[ ! $build_status == 0 ]] then
+  printf "Build exit code: '%s'\n" $build_status
+  exit $build_status
+fi
+
+./zig-out/bin/enclaver $@
 
