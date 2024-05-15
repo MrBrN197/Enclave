@@ -198,16 +198,39 @@ pub const NodeItem = struct {
                 for (self.body.node_items.items) |item| {
                     switch (item.data) {
                         .function_signature_item => |fnsig| {
-                            try fmt.format(writer, "pub fn {s}(", .{item.name.?});
+                            try fmt.format(writer, "pub fn {s}(self: *const @This() ", .{item.name.?});
+
+                            for (fnsig.params.items) |param| {
+                                try fmt.format(
+                                    writer,
+                                    ",{}",
+                                    .{param},
+                                );
+                            }
+
                             if (fnsig.return_type) |rt| {
                                 try fmt.format(writer, ") {}{{\n", .{rt});
                             } else {
                                 try fmt.format(writer, ") void{{\n", .{});
                             }
 
-                            // try fmt.format(writer, "return {s}Fn(context,", .{item.name.?});
-
-                            try fmt.format(writer, "@panic(\"todo:{s}\");\n", .{item.name.?});
+                            try fmt.format(
+                                writer,
+                                "return {s}Fn(self.context\n",
+                                .{item.name.?},
+                            );
+                            for (fnsig.params.items) |param| {
+                                try fmt.format(
+                                    writer,
+                                    ",{s}",
+                                    .{param.name.?},
+                                );
+                            }
+                            try fmt.format(
+                                writer,
+                                ");\n",
+                                .{},
+                            );
 
                             try fmt.format(writer, "}}\n", .{});
                         },

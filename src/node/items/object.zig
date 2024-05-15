@@ -79,17 +79,23 @@ pub const Object = struct {
             }
 
             try fmt.format(writer,
-                \\pub fn get{[iname]s}(self: *const @This()) Any{[iname]s}.Generic{[iname]s}({[self]s}) {{
-                \\    return .{{
-                \\        .context = self,
+                \\pub fn get{[iname]s} (self: *const @This(),) 
+                \\ Any{[iname]s}.Generic{[iname]s}(
+                \\ {[self]s},
             , .{ .iname = interface_name, .self = name });
 
             for (interface.procedures.items) |proc| {
-                try fmt.format(writer, ".{s}Fn = {s}_{s},", .{ proc.name, interface_name, proc.name });
+                try fmt.format(
+                    writer,
+                    "&{s}_{s},",
+                    .{ interface_name, proc.name },
+                );
             }
 
             try fmt.format(writer,
-                \\    }};
+                \\) {{
+                \\
+                \\    return .{{  .context = self }};
                 \\}}
                 \\
             , .{});
