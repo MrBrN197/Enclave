@@ -18,7 +18,9 @@ const SerializeContext = @import("./node/items/item.zig").SerializeContext;
 const Impl = @import("./node/items/item.zig").Impl;
 const File = std.fs.File;
 
-pub const std_options = std.Options{ .log_level = .warn };
+pub const std_options = std.Options{
+    .log_level = .warn,
+};
 
 var gpa_allocator = std.heap.GeneralPurposeAllocator(.{
     .enable_memory_limit = true,
@@ -53,18 +55,7 @@ pub fn main() !void {
 
 pub fn convert_files(filepaths: []const []const u8, writer: anytype) !void {
     _ = writer; // autofix
-    const parse_results = Parser.parseFiles(gpa, filepaths) catch |e| {
-        switch (e) {
-            error.FileNotFound => std.log.warn("file path not found: {s}", .{filepaths}),
-            error.IsDir => std.log.warn("skipping directory name \"{s}\"", .{filepaths}),
-
-            else => {
-                std.log.err("{s}: failed to read file {s}", .{ filepaths, @errorName(e) });
-                std.process.exit(@truncate(@intFromError(e))); // FIX:
-            },
-        }
-        return;
-    };
+    const parse_results = try Parser.parseFiles(gpa, filepaths);
 
     var ctx_items = std.StringHashMap(NodeItem).init(gpa); //FIX;
     var implementations = std.ArrayList(Impl).init(gpa); //FIX;

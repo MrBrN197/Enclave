@@ -80,14 +80,32 @@ pub const Parser = struct {
 
         for (filepaths) |filepath| {
             std.log.info("filePath: {s}", .{filepath});
-            const filesize = (std.fs.cwd().statFile(filepath) catch unreachable).size;
 
+            const filestat = std.fs.cwd().statFile(filepath) catch unreachable;
+
+            const filesize = filestat.size;
             const buffer = allocator.alloc(u8, filesize + 1) catch unreachable;
             defer allocator.free(buffer);
 
-            const read: []const u8 = std.fs.cwd().readFile(filepath, buffer) catch unreachable;
+            const read: []const u8 = std.fs.cwd().readFile(
+                filepath,
+                buffer,
+            ) catch |err| {
+                switch (err) {
+                    error.IsDir => {
+                        std.log.warn(
+                            "skipping directory:\n\t=> {s}",
+                            .{filepath},
+                        );
+                        continue;
+                    },
+                    else => std.log.err("{s}", .{@errorName(err)}),
+                }
+                return err;
+            };
 
             assert(read.len == (buffer.len - 1));
+
             const parser = Parser.init(read, allocator);
 
             const parsed_module = parser.parse();
