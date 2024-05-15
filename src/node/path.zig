@@ -145,7 +145,8 @@ pub const PathParser = struct {
 
             else => {
                 self.parser.print_source(node.node);
-                @panic("todo");
+
+                @panic("invalid node type");
             },
         }
     }
@@ -249,7 +250,7 @@ pub const ImportPathParser = struct {
 
             else => {
                 self.parser.print_source(node.node);
-                @panic("todo");
+                @panic("invalid node type");
             },
         }
     }

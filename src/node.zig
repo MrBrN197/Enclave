@@ -7,7 +7,7 @@ const procedure = @import("./node/items/procedure.zig");
 const root = @import("./root.zig");
 const std = @import("std");
 const str = @import("./str.zig");
-const items = @import("./node/item.zig");
+const items = @import("./node/items/item.zig");
 const object = @import("./node/items/object.zig");
 
 const assert = std.debug.assert;
@@ -19,7 +19,7 @@ const Buf = path.Buf;
 const Parser = parse.Parser;
 const Writer = @TypeOf(std.io.getStdOut().writer());
 pub const IdentifierKind = node_types.IdentifierKind;
-pub const Import = @import("./node/item.zig").Import;
+pub const Import = @import("./node/items/item.zig").Import;
 pub const ImportPath = node_types.ImportPath;
 pub const ImportPathParser = path.ImportPathParser;
 pub const Module = items.Module;
@@ -122,7 +122,6 @@ pub const Node = struct {
         var result = Module.init(self.allocator); // FIX:
 
         for (children.items) |child| {
-            eprintln("<---{s}----->", .{@tagName(child.node_type)});
             child.extract_node_items();
         }
 
@@ -212,8 +211,6 @@ pub const Node = struct {
             .function_signature_item => {
                 // TODO: vis
                 // TODO: function_modifiers
-
-                self.ctx.parser.print_source(self.node);
 
                 const name_field = self.get_field_unchecked("name");
                 const name = name_field.extract_type_ref().identifier;
@@ -929,7 +926,7 @@ pub const Node = struct {
     }
 
     const BoundsMap = std.StringArrayHashMap(std.ArrayList(TypeKind));
-    ///
+
     fn extract_where_clause(self: *const Self, collect_bounds: *BoundsMap) void {
         const children = self.get_children_named();
 

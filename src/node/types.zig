@@ -7,9 +7,9 @@ const assert = std.debug.assert;
 const fmt = std.fmt;
 const mem = std.mem;
 
-pub const NodeItem = @import("./item.zig").NodeItem;
+pub const NodeItem = @import("./items/item.zig").NodeItem;
 pub const ImportPath = @import("./path.zig").ImportPath;
-pub const IdentifierKind = @import("./item.zig").IdentifierKind;
+pub const IdentifierKind = @import("./items/item.zig").IdentifierKind;
 const procedure = @import("./items/procedure.zig");
 
 pub const NodeType = enum {

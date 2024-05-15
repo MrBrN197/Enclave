@@ -8,7 +8,7 @@ const eprintln = root.eprintln;
 const eprint = root.eprint;
 const mem = std.mem;
 
-const Module = @import("./node/item.zig").Module;
+const Module = @import("./node/items/item.zig").Module;
 const NodeItem = @import("./node/types.zig").NodeItem;
 const Node = tsnode.Node;
 const TypeItem = @import("./node/types.zig").NodeItem.Data.TypeItem;
@@ -68,8 +68,6 @@ pub const Parser = struct {
 
             .{ .row = row, .column = column, .source = source, .tag = c.ts_node_type(node) },
         );
-
-        return;
     }
 
     const ParseResult = struct {

@@ -2,20 +2,23 @@ const c = @import("./c.zig");
 const eprint = @import("./root.zig").eprint;
 const eprintln = @import("./root.zig").eprintln;
 const eql = @import("./root.zig").eql;
-const Node = @import("./node.zig").Node;
-const NodeItem = @import("./node.zig").NodeItem;
-const File = std.fs.File;
-
-const Parser = @import("./parser.zig").Parser;
+const log = std.log;
+const mem = std.mem;
 const std = @import("std");
 const tsnode = @import("./node.zig");
-
-const assert = std.debug.assert;
-const mem = std.mem;
-const log = std.log;
+const debug = std.debug;
 
 const as_kb: usize = @shlExact(1, 20);
 const as_mb: usize = @shlExact(1, 30);
+
+const Parser = @import("./parser.zig").Parser;
+const Node = @import("./node.zig").Node;
+const NodeItem = @import("./node.zig").NodeItem;
+const SerializeContext = @import("./node/items/item.zig").SerializeContext;
+const Impl = @import("./node/items/item.zig").Impl;
+const File = std.fs.File;
+
+pub const std_options = std.Options{ .log_level = .warn };
 
 var gpa_allocator = std.heap.GeneralPurposeAllocator(.{
     .enable_memory_limit = true,
@@ -23,25 +26,22 @@ var gpa_allocator = std.heap.GeneralPurposeAllocator(.{
 
 const gpa = gpa_allocator.allocator();
 
-pub const std_options = std.Options{ .log_level = .warn };
-
-pub fn main() void {
+pub fn main() !void {
     gpa_allocator.setRequestedMemoryLimit(as_mb * 256);
 
     var argv = std.process.args();
-    assert(argv.skip());
+    if (!argv.skip()) return error.InvalidArg;
 
     var count: usize = 0;
 
     var filepaths = std.ArrayList([]const u8).init(gpa);
 
     while (argv.next()) |filepath| {
-        filepaths.append(filepath) catch unreachable;
-
+        filepaths.append(filepath) catch return error.InvalidArgPath;
         count += 1;
     }
 
-    convert_file(filepaths.items, (std.io.getStdOut().writer()));
+    try convert_files(filepaths.items, (std.io.getStdOut().writer()));
 
     if (count == 0) {
         std.log.err("error: filepath required", .{});
@@ -51,7 +51,8 @@ pub fn main() void {
     std.log.info("processed {} files", .{count});
 }
 
-pub fn convert_file(filepaths: []const []const u8, writer: anytype) void {
+pub fn convert_files(filepaths: []const []const u8, writer: anytype) !void {
+    _ = writer; // autofix
     const parse_results = Parser.parseFiles(gpa, filepaths) catch |e| {
         switch (e) {
             error.FileNotFound => std.log.warn("file path not found: {s}", .{filepaths}),
@@ -65,7 +66,26 @@ pub fn convert_file(filepaths: []const []const u8, writer: anytype) void {
         return;
     };
 
+    var ctx_items = std.StringHashMap(NodeItem).init(gpa); //FIX;
+    var implementations = std.ArrayList(Impl).init(gpa); //FIX;
+
+    for (parse_results.items) |parse_result| {
+        const module = parse_result.parserd_module.module;
+        for (module.node_items.items) |node_item| {
+            switch (node_item.data) {
+                .impl_item => |impl| try implementations.append(impl),
+                else => try ctx_items.putNoClobber(node_item.name.?, node_item),
+            }
+        }
+    }
+
+    const ctx = SerializeContext{
+        .items = ctx_items,
+        .impls = implementations.items,
+    };
+
     const suffix = ".zig";
+
     for (parse_results.items) |parse_result| {
         std.log.info("Item: filepath: {s}", .{parse_result.filepath});
 
@@ -86,8 +106,10 @@ pub fn convert_file(filepaths: []const []const u8, writer: anytype) void {
         ) catch unreachable; // FIX:
 
         for (parse_result.parserd_module.module.node_items.items) |item| {
-            item.serialize(outfile.writer()) catch unreachable;
-            item.serialize(writer) catch unreachable;
+            if (item.data == .impl_item) continue;
+
+            item.serialize(outfile.writer(), ctx) catch unreachable;
+            // item.serialize(writer, ctx) catch unreachable;
         }
     }
 }

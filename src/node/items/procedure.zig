@@ -1,4 +1,4 @@
-const IdentifierKind = @import("../item.zig").IdentifierKind;
+const IdentifierKind = @import("./item.zig").IdentifierKind;
 const TypeKind = @import("../types.zig").TypeKind;
 
 const std = @import("std");

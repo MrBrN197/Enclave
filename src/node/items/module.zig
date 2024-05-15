@@ -1,6 +1,7 @@
-const NodeItem = @import("../item.zig").NodeItem;
+const NodeItem = @import("./item.zig").NodeItem;
 
 const std = @import("std");
+const SerializeContext = @import("./item.zig").SerializeContext;
 
 pub const Module = struct {
     node_items: std.ArrayList(NodeItem),
@@ -18,10 +19,10 @@ pub const Module = struct {
         self.node_items.append(item) catch unreachable;
     }
 
-    pub fn serialize(self: Self, writer: anytype, name: []const u8) @TypeOf(writer).Error!void {
+    pub fn serialize(self: Self, writer: anytype, name: []const u8, ctx: SerializeContext) @TypeOf(writer).Error!void {
         if (self.node_items.items.len > 0) {
             try std.fmt.format(writer, "const {s} = struct {{ // TODO: Module  \n", .{name}); // FIX:
-            for (self.node_items.items) |item| try item.serialize(writer);
+            for (self.node_items.items) |item| try item.serialize(writer, ctx);
             try std.fmt.format(writer, "\n}};", .{});
         } else {
             try std.fmt.format(writer, "const {s} = @import(\"{s}\");", .{ name, name });
