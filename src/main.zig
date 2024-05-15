@@ -54,7 +54,6 @@ pub fn main() !void {
 }
 
 pub fn convert_files(filepaths: []const []const u8, writer: anytype) !void {
-    _ = writer; // autofix
     const parse_results = try Parser.parseFiles(gpa, filepaths);
 
     var ctx_items = std.StringHashMap(NodeItem).init(gpa); //FIX;
@@ -100,7 +99,7 @@ pub fn convert_files(filepaths: []const []const u8, writer: anytype) !void {
             if (item.data == .impl_item) continue;
 
             item.serialize(outfile.writer(), ctx) catch unreachable;
-            // item.serialize(writer, ctx) catch unreachable;
+            item.serialize(writer, ctx) catch unreachable;
         }
     }
 }

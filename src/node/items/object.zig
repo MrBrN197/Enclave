@@ -38,18 +38,12 @@ pub const Object = struct {
 
         const fields_str = buffer[0..idx];
 
-        try fmt.format(
-            writer,
-            "" ++
-                \\const {s} = struct {{
-                \\{s}
-                \\
-            ,
+        try fmt.format(writer, "" ++
+            \\pub const {s} = struct {{
+            \\{s}
+            \\
+        , .{ name, fields_str });
 
-            .{ name, fields_str },
-        );
-
-        /////
         try fmt.format(writer, "\n", .{});
 
         var impls = std.ArrayList(*const Impl).init(std.heap.page_allocator);
@@ -59,46 +53,56 @@ pub const Object = struct {
         for (impls.items) |impl| {
             const interface_name = impl.for_interface.?.text;
 
-            try fmt.format(writer, "// {s} interface implementation for {s}\n", .{ interface_name, name });
+            try fmt.format(
+                writer,
+                "// {s} interface implementation for {s}\n",
+                .{ interface_name, name },
+            );
 
             const interface = ctx.getInterface(interface_name) catch unreachable; // TODO:
 
             for (interface.procedures.items) |proc| {
-                try fmt.format(writer, "fn {s}_{s}(context: *const @This()", .{
+                try fmt.format(writer, "fn {s}_{s}(_: *anyopaque", .{
                     interface_name,
                     proc.name,
                 });
-                for (proc.data.params.items) |fnsignature| try fmt.format(writer, ",{}", .{fnsignature});
+                for (proc.data.params.items) |fnsignature| try fmt.format(writer, ",_: {}", .{fnsignature.typekind.?});
 
                 if (proc.data.return_type) |return_type| {
                     try fmt.format(writer, ") {s} {{\n", .{return_type});
                 } else {
                     try fmt.format(writer, ") void {{\n", .{});
                 }
-                try fmt.format(writer, "@panic(\"todo: {s}\");\n}}", .{proc.name});
+                try fmt.format(writer,
+                    \\// TODO: 
+                    \\@import("std").debug.print("TODO: '{s}'", .{{}});
+                    \\return 0;
+                    \\}}
+                    \\
+                , .{proc.name});
             }
 
             try fmt.format(writer,
-                \\pub fn get{[iname]s} (self: *const @This(),) 
-                \\ Any{[iname]s}.Generic{[iname]s}(
-                \\ {[self]s},
-            , .{ .iname = interface_name, .self = name });
-
-            for (interface.procedures.items) |proc| {
-                try fmt.format(
-                    writer,
-                    "&{s}_{s},",
-                    .{ interface_name, proc.name },
-                );
-            }
+                \\pub fn get{s} (self: *@This(),) 
+                \\ Any{s} {{
+            , .{ interface_name, interface_name });
 
             try fmt.format(writer,
-                \\) {{
                 \\
-                \\    return .{{  .context = self }};
-                \\}}
+                \\    return .{{
+                \\        .context = self,
                 \\
             , .{});
+
+            for (interface.procedures.items) |proc| {
+                try fmt.format(writer,
+                    \\        .{s}Fn = @ptrCast(&{s}_{s}),
+                    \\
+                , .{ proc.name, interface_name, proc.name });
+            }
+
+            try fmt.format(writer, "}};\n", .{});
+            try fmt.format(writer, "}}\n", .{});
         }
 
         try fmt.format(writer, "}};", .{});

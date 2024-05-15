@@ -16,6 +16,7 @@ pub const Object = @import("./object.zig").Object;
 pub const Procedure = @import("./procedure.zig").Procedure;
 pub const TypeKind = @import("../types.zig").TypeKind;
 pub const FnSignature = @import("./fn.zig").FnSignature;
+pub const Trait = @import("./interface.zig").Trait;
 
 pub const Impl = struct {
     body: ?Module,
@@ -137,115 +138,6 @@ pub const NodeItem = struct {
         procedure_item: Procedure,
         trait_item: Trait,
         type_item: TypeItem,
-
-        const Trait = struct {
-            body: Module,
-            bounds: std.StringArrayHashMap(std.ArrayList(TypeKind)),
-            generics: ?std.ArrayList(TypeKind),
-
-            pub fn serialize(
-                self: *const @This(),
-                writer: anytype,
-                name: []const u8,
-                ctx: SerializeContext,
-            ) @TypeOf(writer).Error!void {
-                const interface_header =
-                    \\
-                    \\// {[name]s} interface
-                    \\const Any{[name]s} = struct {{
-                    \\context: *const anyopaque,
-                    \\
-                ;
-
-                try fmt.format(writer, interface_header, .{ .name = name });
-
-                for (self.body.node_items.items) |item| {
-                    if (item.data == .function_signature_item) continue;
-                    try item.serialize(writer, ctx);
-                }
-
-                try fmt.format(writer,
-                    \\ pub fn Generic{s}(
-                    \\     comptime Context: type,
-                    \\
-                , .{name});
-
-                for (self.body.node_items.items) |item| {
-                    switch (item.data) {
-                        .function_signature_item => |fn_sig| {
-                            const fn_name = item.name.?;
-                            const params = fn_sig.params.items;
-
-                            try fmt.format(writer, "comptime {s}Fn: fn (Context", .{fn_name});
-                            for (params) |param| try fmt.format(writer, ",{}", .{param});
-
-                            if (fn_sig.return_type) |return_type| {
-                                try fmt.format(writer, ") {},\n", .{return_type});
-                            } else {
-                                try fmt.format(writer, ") void,\n", .{});
-                            }
-                        },
-                        else => {},
-                    }
-                }
-
-                try fmt.format(writer,
-                    \\ ) type {{
-                    \\     return struct {{
-                    \\         context: Context,
-                , .{});
-
-                for (self.body.node_items.items) |item| {
-                    switch (item.data) {
-                        .function_signature_item => |fnsig| {
-                            try fmt.format(writer, "pub fn {s}(self: *const @This() ", .{item.name.?});
-
-                            for (fnsig.params.items) |param| {
-                                try fmt.format(
-                                    writer,
-                                    ",{}",
-                                    .{param},
-                                );
-                            }
-
-                            if (fnsig.return_type) |rt| {
-                                try fmt.format(writer, ") {}{{\n", .{rt});
-                            } else {
-                                try fmt.format(writer, ") void{{\n", .{});
-                            }
-
-                            try fmt.format(
-                                writer,
-                                "return {s}Fn(self.context\n",
-                                .{item.name.?},
-                            );
-                            for (fnsig.params.items) |param| {
-                                try fmt.format(
-                                    writer,
-                                    ",{s}",
-                                    .{param.name.?},
-                                );
-                            }
-                            try fmt.format(
-                                writer,
-                                ");\n",
-                                .{},
-                            );
-
-                            try fmt.format(writer, "}}\n", .{});
-                        },
-                        else => {},
-                    }
-                }
-
-                try fmt.format(writer,
-                    \\     }};
-                    \\ }}
-                , .{});
-
-                try fmt.format(writer, "}};\n", .{});
-            }
-        };
 
         pub const Constant = struct {
             type_kind: TypeKind,
