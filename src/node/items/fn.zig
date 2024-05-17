@@ -2,11 +2,10 @@ const std = @import("std");
 
 const TypeKind = @import("./item.zig").TypeKind;
 const procedure = @import("./procedure.zig");
-const BoundsMap = @import("./interface.zig").BoundsMap;
+const TypeParam = @import("./item.zig").TypeParam;
 
 pub const FnSignature = struct {
-    bounds: BoundsMap,
-    generics: ?std.ArrayList(TypeKind),
+    generics: ?std.ArrayList(TypeParam),
     params: std.ArrayList(procedure.Param),
     return_type: ?TypeKind,
 

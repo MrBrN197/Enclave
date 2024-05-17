@@ -1,23 +1,22 @@
-const BoundsMap = @import("./interface.zig").BoundsMap;
 const IdentifierKind = @import("./item.zig").IdentifierKind;
 const TypeKind = @import("../types.zig").TypeKind;
+const TypeParam = @import("./item.zig").TypeParam;
 
 const assert = std.debug.assert;
 const fmt = std.fmt;
 const std = @import("std");
 
 pub const Procedure = struct {
-    bounds: ?BoundsMap,
-    generics: ?std.ArrayList(TypeKind),
+    generics: ?std.ArrayList(TypeParam),
     params: []const Param,
     return_type: TypeKind,
 
-    pub fn get_bounds(self: *const @This(), type_param_identifier: IdentifierKind) ?[]const TypeKind {
-        if (self.bounds) |bounds| {
-            const result = bounds.get(type_param_identifier) orelse return null;
-            return result.items;
-        } else return null;
-    }
+    // pub fn get_bounds(self: *const @This(), type_param_identifier: IdentifierKind) ?[]const TypeKind {
+    //     if (self.bounds) |bounds| {
+    //         const result = bounds.get(type_param_identifier) orelse return null;
+    //         return result.items;
+    //     } else return null;
+    // }
 
     pub fn serialize(self: *const @This(), writer: anytype, name: []const u8) !void {
 
@@ -26,13 +25,13 @@ pub const Procedure = struct {
         if (self.generics) |generics| {
             for (generics.items) |generic| {
                 try fmt.format(writer, "// ", .{});
-                assert(generic == .identifier);
-                try fmt.format(writer, "{s}: ", .{generic});
+                try fmt.format(writer, "{}: ", .{generic});
 
-                if (self.get_bounds(generic.identifier)) |bounds|
-                    for (bounds) |bound| fmt.format(writer, "{}, ", .{bound}) catch unreachable; //FIX: infered error
+                @panic("todo:");
+                // if (self.get_bounds(generic.identifier)) |bounds|
+                //     for (bounds) |bound| fmt.format(writer, "{}, ", .{bound}) catch unreachable; //FIX: infered error
 
-                try fmt.format(writer, "\n", .{});
+                // try fmt.format(writer, "\n", .{});
             }
         }
         try fmt.format(writer, "fn {s}", .{name});

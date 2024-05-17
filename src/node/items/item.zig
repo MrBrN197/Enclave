@@ -17,14 +17,27 @@ pub const Procedure = @import("./procedure.zig").Procedure;
 pub const TypeKind = @import("../types.zig").TypeKind;
 pub const FnSignature = @import("./fn.zig").FnSignature;
 pub const Trait = interface.Trait;
-pub const BoundsMap = interface.BoundsMap;
 
 pub const interface = @import("./interface.zig");
 
+pub const TypeParam = struct {
+    type: TypeKind,
+    constraints: ?std.ArrayList(TypeBound),
+
+    pub const TypeBound = union(enum) {
+        type: TypeKind,
+        constant: PrimitiveKind,
+    };
+
+    pub fn format(self: *const @This(), comptime _: []const u8, _: fmt.FormatOptions, writer: anytype) !void {
+        _ = self; // autofix
+        _ = writer; // autofix
+    }
+};
+
 pub const Impl = struct {
     body: ?Module,
-    bounds: BoundsMap,
-    generics: ?std.ArrayList(TypeKind),
+    generics: ?std.ArrayList(TypeParam),
     implementor: TypeKind,
     for_interface: ?IdentifierKind,
 };

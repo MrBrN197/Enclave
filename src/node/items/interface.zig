@@ -1,30 +1,15 @@
 const std = @import("std");
 const fmt = std.fmt;
 
-const getAutoEqlFn = @import("std").array_hash_map.getAutoEqlFn;
 const IdentifierKind = @import("./item.zig").IdentifierKind;
 const Module = @import("./module.zig").Module;
 const SerializeContext = @import("./item.zig").SerializeContext;
 const TypeKind = @import("../types.zig").TypeKind;
-
-pub const BoundsMap = std.ArrayHashMap(
-    IdentifierKind,
-    std.ArrayList(TypeKind),
-    HashContext,
-    false,
-);
-
-const HashContext = struct {
-    pub const eql = getAutoEqlFn(IdentifierKind, @This());
-    pub fn hash(_: @This(), id: IdentifierKind) u32 {
-        return @intFromEnum(id); //FIX: HACK
-    }
-};
+const TypeParam = @import("./item.zig").TypeParam;
 
 pub const Trait = struct {
     body: Module,
-    bounds: BoundsMap,
-    generics: ?std.ArrayList(TypeKind),
+    generics: ?std.ArrayList(TypeParam),
 
     pub fn serialize(
         self: *const @This(),

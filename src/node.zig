@@ -15,7 +15,6 @@ const eprintln = root.eprintln;
 const eprint = root.eprint;
 
 const Allocator = std.mem.Allocator;
-const BoundsMap = items.interface.BoundsMap;
 const Buf = path.Buf;
 const Parser = parse.Parser;
 const Writer = @TypeOf(std.io.getStdOut().writer());
@@ -28,6 +27,7 @@ pub const NodeItem = node_types.NodeItem;
 pub const NodeType = node_types.NodeType;
 pub const PathParser = path.PathParser;
 pub const TypeKind = node_types.TypeKind;
+const TypeParam = items.TypeParam;
 
 pub fn get_child_named(node: c.TSNode, idx: u32) ?c.TSNode {
     const result = c.ts_node_named_child(node, idx);
@@ -64,6 +64,29 @@ pub const Node = struct {
     ctx: Ctx,
 
     const Self = @This();
+
+    pub fn extract_trait_bounds(
+        allocator: std.mem.Allocator,
+        nodes: []const *const @This(),
+    ) ?std.ArrayList(TypeParam.TypeBound) {
+        var result = std.ArrayList(TypeParam.TypeBound).init(allocator);
+
+        for (nodes) |node| {
+            switch (node.node_type) {
+                .higher_ranked_trait_bound, .lifetime => continue,
+
+                else => {
+                    const typeref = node.extract_type_ref();
+                    result.append(.{ .type = typeref }) catch unreachable;
+                },
+            }
+        }
+        if (result.items.len == 0) {
+            result.clearAndFree();
+            return null;
+        }
+        return result;
+    }
 
     pub fn getFirstChildNamed(node: Node, tag: NodeType) ?Node {
         var children = node.getNamedChildren();
@@ -228,12 +251,10 @@ pub const Node = struct {
                 const params_field = self.get_field_unchecked("parameters");
                 const params = params_field.extract_parameters();
 
-                var bounds = BoundsMap.init(self.allocator);
-
-                const type_params = ty: {
+                var type_params = params: {
                     if (self.get_field("type_parameters")) |field| {
-                        break :ty field.extract_type_parameters(&bounds);
-                    } else break :ty null;
+                        break :params field.extract_type_parameters();
+                    } else break :params null;
                 };
 
                 const return_type: ?TypeKind = ret: {
@@ -243,13 +264,19 @@ pub const Node = struct {
                     } else break :ret null;
                 };
 
-                for (self.getNamedChildren().items) |child| {
-                    if (child.node_type == .where_clause) child.extract_where_clause(&bounds);
+                var where_clause_type_params = for (self.getNamedChildren().items) |child| {
+                    if (child.node_type == .where_clause) break child.extract_where_clause();
+                } else null;
+
+                if (type_params) |*params1| {
+                    if (where_clause_type_params) |*params2| {
+                        params1.appendSlice(params2.items) catch unreachable;
+                        params2.clearAndFree();
+                    }
                 }
 
                 const function_signature_data = NodeItem.Data{
                     .function_signature_item = .{
-                        .bounds = bounds,
                         .generics = type_params,
                         .params = params,
                         .return_type = return_type,
@@ -370,8 +397,10 @@ pub const Node = struct {
         return children;
     }
 
-    fn extract_type_parameters(self: *const Node, collect_bounds: *BoundsMap) ?std.ArrayList(TypeKind) {
-        var params = std.ArrayList(TypeKind).init(self.allocator);
+    fn extract_type_parameters(
+        self: *const Node,
+    ) ?std.ArrayList(TypeParam) {
+        var result = std.ArrayList(TypeParam).init(self.allocator);
 
         const children = self.getNamedChildren();
 
@@ -379,55 +408,68 @@ pub const Node = struct {
             if (child.node_type == .attribute_item) @panic("Todo");
 
             switch (child.node_type) {
-                .lifetime => std.log.info("skipping: lifetime", .{}),
+                .lifetime => continue,
                 .metavariable => @panic("todo:"),
-                .type_identifier => {
-                    const typename = child.extract_type_ref();
 
-                    params.append(typename) catch unreachable;
+                .type_identifier => {
+                    const typeref = child.extract_type_ref();
+
+                    result.append(TypeParam{
+                        .type = typeref,
+                        .constraints = null,
+                    }) catch unreachable;
                 },
                 .constrained_type_parameter => {
                     const typename_field = child.get_field_unchecked("left");
 
-                    if (typename_field.node_type == .lifetime) {
-                        std.log.info("skipping lifetime", .{});
+                    if (typename_field.node_type == .lifetime)
                         continue;
-                    }
 
                     assert(typename_field.node_type == .type_identifier);
 
-                    const typename = typename_field.extract_type_ref();
+                    const typeref = typename_field.extract_type_ref();
 
-                    params.append(typename) catch unreachable;
+                    const bounds_field = child.get_field_unchecked("bounds");
 
-                    const bounds = child.get_field_unchecked("bounds").getNamedChildren();
-                    var typekinds = std.ArrayList(TypeKind).init(self.allocator);
+                    var trait_bounds = bounds_field.getNamedChildren();
+                    defer trait_bounds.clearAndFree();
 
-                    for (bounds.items) |bound| {
-                        switch (bound.node_type) {
-                            .lifetime => std.log.info("skipping lifetime", .{}),
-                            .higher_ranked_trait_bound => std.log.info("skipping higer ranked trait bounds", .{}),
-                            else => {
-                                const typekind = bound.extract_type_ref();
-                                typekinds.append(typekind) catch unreachable;
-                            },
-                        }
-                    }
-                    collect_bounds.putNoClobber(typename.identifier, typekinds) catch unreachable;
+                    const constraints = Node.extract_trait_bounds(
+                        self.allocator,
+                        trait_bounds.items,
+                    );
+
+                    result.append(TypeParam{
+                        .constraints = constraints,
+                        .type = typeref,
+                    }) catch unreachable;
                 },
                 .optional_type_parameter => @panic("todo:"),
                 .const_parameter => {
-                    @panic("todo: const_param");
+                    const name_field = child.get_field_unchecked("name"); //$.identifier;
+                    const name = name_field.extract_type_ref();
+                    const type_field = child.get_field_unchecked("type"); //$._type;
+                    const typeref = type_field.extract_type_ref();
+
+                    var constraints = std.ArrayList(TypeParam.TypeBound).init(self.allocator);
+                    constraints.append(.{
+                        .constant = typeref.identifier.primitive,
+                    }) catch unreachable;
+
+                    result.append(TypeParam{
+                        .type = name,
+                        .constraints = constraints,
+                    }) catch unreachable;
                 },
                 else => unreachable,
             }
         }
 
-        if (params.items.len == 0) {
-            params.clearAndFree();
+        if (result.items.len == 0) {
+            result.clearAndFree();
             return null;
         }
-        return params;
+        return result;
     }
 
     fn extract_struct_item(self: *const @This()) NodeItem {
@@ -440,13 +482,10 @@ pub const Node = struct {
         const struct_name_field = self.get_field_unchecked("name"); // $.identifier,
         const struct_name = struct_name_field.extract_type_ref().identifier;
 
-        var bounds = BoundsMap.init(self.allocator);
-        const generics: ?std.ArrayList(TypeKind) = blk: {
+        const generics: ?std.ArrayList(TypeParam) = params: {
             if (self.get_field("type_parameters")) |type_parameters| {
-                const params = type_parameters.extract_type_parameters(&bounds);
-
-                break :blk params;
-            } else break :blk null;
+                break :params type_parameters.extract_type_parameters();
+            } else break :params null;
         };
 
         var fields = std.ArrayList(object.Field).init(self.allocator);
@@ -502,7 +541,6 @@ pub const Node = struct {
                 .fields = fields.items,
                 .generics = generics,
                 .ordered = ordered,
-                .bounds = bounds,
             },
         };
 
@@ -583,10 +621,9 @@ pub const Node = struct {
         const name = name_field.extract_type_ref();
         assert(name == .identifier);
 
-        var bounds = BoundsMap.init(self.allocator);
         const generics = blk: {
             if (self.get_field("type_parameters")) |field| {
-                break :blk field.extract_type_parameters(&bounds);
+                break :blk field.extract_type_parameters();
             } else break :blk null;
         };
 
@@ -596,10 +633,15 @@ pub const Node = struct {
             annotations.append(text) catch unreachable;
         }
 
-        const children = self.getNamedChildren();
-        for (children.items) |child| {
-            if (child.node_type == .where_clause) child.extract_where_clause(&bounds);
-        }
+        var children = self.getNamedChildren();
+        defer children.clearAndFree();
+
+        const bounds = for (children.items) |child| {
+            if (child.node_type == .where_clause) {
+                break child.extract_where_clause();
+            }
+        } else null;
+        _ = bounds; // autofix
 
         const body_field = self.get_field_unchecked("body");
 
@@ -621,7 +663,6 @@ pub const Node = struct {
         const item_data = NodeItem.Data{
             .trait_item = .{
                 .body = module,
-                .bounds = bounds,
                 .generics = generics,
             },
         };
@@ -898,11 +939,10 @@ pub const Node = struct {
         assert((name_field.node_type == .identifier)); // TODO: $metavariable
         const name = parser.node_to_string_alloc(name_field.node, self.allocator);
 
-        var bounds = BoundsMap.init(self.allocator);
-        const generics = blk: {
+        var type_params = params: {
             if (self.get_field("type_parameters")) |field| {
-                break :blk field.extract_type_parameters(&bounds);
-            } else break :blk null;
+                break :params field.extract_type_parameters();
+            } else break :params null;
         };
 
         const parameters_field = self.get_field_unchecked("parameters");
@@ -919,9 +959,15 @@ pub const Node = struct {
         // TODO: field('body') //  $.block;
 
         const children = self.getNamedChildren();
-        for (children.items) |child| {
+        var where_bounds = for (children.items) |child| {
             if (child.node_type == .where_clause) {
-                child.extract_where_clause(&bounds);
+                break child.extract_where_clause();
+            }
+        } else null;
+
+        if (type_params) |*params1| {
+            if (where_bounds) |*params2| {
+                params1.appendSlice(params2.items) catch unreachable;
             }
         }
 
@@ -929,8 +975,7 @@ pub const Node = struct {
             .procedure_item = .{
                 .params = params.items,
                 .return_type = return_type_kind,
-                .generics = generics,
-                .bounds = bounds,
+                .generics = type_params,
             },
         };
 
@@ -938,58 +983,51 @@ pub const Node = struct {
         return result;
     }
 
-    fn extract_where_clause(self: *const Self, collect_bounds: *BoundsMap) void {
-        const children = self.getNamedChildren();
+    fn extract_where_clause(self: *const Self) ?std.ArrayList(TypeParam) {
+        var result = std
+            .ArrayList(TypeParam).init(self.allocator);
 
-        assert(children.items.len > 0);
+        const clauses = self.getNamedChildren();
 
-        for (children.items) |child| {
+        assert(clauses.items.len > 0);
+
+        for (clauses.items) |child| {
             assert(child.node_type == .where_predicate);
 
             const predicate = child;
             const left_field = predicate.get_field_unchecked("left");
 
-            var identifier: IdentifierKind = undefined;
+            const typeref: TypeKind = typeref: {
+                switch (left_field.node_type) {
+                    .array_type => @panic("todo: array_type "),
+                    .generic_type => @panic("todo: generic_type "),
+                    .higher_ranked_trait_bound => @panic("todo: higher_ranked_trait_bound "),
+                    .lifetime => @panic("todo: lifetime "),
+                    .pointer_type => @panic("todo: pointer_type "),
+                    .reference_type => @panic("todo: reference_type "),
+                    .scoped_type_identifier => break :typeref left_field.extract_type_ref(),
+                    .tuple_type => @panic("todo: tuple_type "),
 
-            switch (left_field.node_type) {
-                .lifetime => @panic("todo: lifetime "),
-                .scoped_type_identifier => {
-                    const scoped_type = left_field.extract_type_ref();
-                    identifier = scoped_type.identifier;
-                },
-                .generic_type => @panic("todo: generic_type "),
-                .reference_type => @panic("todo: reference_type "),
-                .pointer_type => @panic("todo: pointer_type "),
-                .tuple_type => @panic("todo: tuple_type "),
-                .array_type => @panic("todo: array_type "),
-                .higher_ranked_trait_bound => @panic("todo: higher_ranked_trait_bound "),
-
-                else => {
-                    const typekind = left_field.extract_type_ref();
-                    assert(typekind == .identifier);
-                    identifier = typekind.identifier;
-                },
-            }
-
-            const bounds = child.get_field_unchecked("bounds").getNamedChildren();
-            var bounds_list = std.ArrayList(TypeKind).init(self.allocator);
-
-            for (bounds.items) |bound| {
-                switch (bound.node_type) {
-                    .lifetime => std.log.info("skipping: lifetime ", .{}),
-                    .higher_ranked_trait_bound => std.log.info("skipping higer_ranked_trait_bounds", .{}),
-                    else => {
-                        const typekind = bound.extract_type_ref();
-                        bounds_list.append(typekind) catch unreachable;
-                    },
+                    else => break :typeref left_field.extract_type_ref(),
                 }
-            }
+            };
 
-            const get_or_put = collect_bounds.getOrPut(identifier) catch unreachable;
-            if (!get_or_put.found_existing) {
-                get_or_put.value_ptr.* = bounds_list;
-            }
+            var trait_bounds = child.get_field_unchecked("bounds").getNamedChildren();
+            defer trait_bounds.clearAndFree();
+
+            const constraints = Node.extract_trait_bounds(self.allocator, trait_bounds.items);
+
+            result.append(TypeParam{
+                .type = typeref,
+                .constraints = constraints,
+            }) catch unreachable;
         }
+
+        if (result.items.len == 0) {
+            result.clearAndFree();
+            return null;
+        }
+        return result;
     }
 
     fn extract_parameters(
@@ -1220,11 +1258,9 @@ pub const Node = struct {
 
     /// FIX:
     fn extract_impl_item(self: *const @This()) NodeItem {
-        var bounds = BoundsMap.init(self.allocator);
-
-        const type_parameters = params: {
+        var type_parameters = params: {
             if (self.get_field("type_parameters")) |field| { //$type_parameters
-                break :params field.extract_type_parameters(&bounds);
+                break :params field.extract_type_parameters();
             } else break :params null;
         };
 
@@ -1238,8 +1274,15 @@ pub const Node = struct {
         const implementor_identifier = type_field.extract_type_ref();
 
         const children = self.getNamedChildren();
-        for (children.items) |child| {
-            if (child.node_type == .where_clause) child.extract_where_clause(&bounds);
+        var where_clause_params = for (children.items) |child| {
+            if (child.node_type == .where_clause) break child.extract_where_clause();
+        } else null;
+
+        if (type_parameters) |*params1| {
+            if (where_clause_params) |*params2| {
+                params1.appendSlice(params2.items) catch unreachable;
+                params2.clearAndFree();
+            }
         }
 
         const body: ?Module = body: {
@@ -1265,7 +1308,6 @@ pub const Node = struct {
         const item_data = NodeItem.Data{
             .impl_item = .{
                 .body = body,
-                .bounds = bounds,
                 .generics = type_parameters,
                 .implementor = implementor_identifier,
                 .for_interface = trait_identifier,
