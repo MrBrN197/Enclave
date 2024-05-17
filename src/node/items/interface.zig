@@ -45,9 +45,23 @@ pub const Trait = struct {
         for (self.body.node_items.items) |item| {
             switch (item.data) {
                 .function_signature_item => |fnsig| {
-                    try fmt.format(writer, "{s}Fn: *const fn(*anyopaque", .{item.name.?});
+                    try fmt.format(writer, "{s}Fn: *const fn(", .{item.name.?});
 
-                    for (fnsig.params.items) |param| try fmt.format(writer, ",{}", .{param.typekind.?});
+                    for (fnsig.params.items, 0..) |param, i| {
+                        if (i == 0) {
+                            if (param.typekind.? == .self) {
+                                const is_ref = if (param.typekind.?.self.is_ref) "*" else "";
+                                const is_mut = if (param.typekind.?.self.is_mut) "" else "const";
+
+                                try fmt.format(writer, "{s}{s} anyopaque", .{
+                                    is_ref,
+                                    is_mut,
+                                });
+                            }
+                        } else {
+                            try fmt.format(writer, ",{}", .{param.typekind.?});
+                        }
+                    }
 
                     try fmt.format(writer, ") ", .{});
 

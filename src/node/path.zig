@@ -39,17 +39,16 @@ pub const Buf = struct {
 };
 
 pub const ImportPath = union(enum) {
-    const Self = @This();
-
+    multiple: std.ArrayList(ImportPath),
     singular: struct {
         name: Buf, // FIX: rename
         alias: ?[]const u8,
         next: ?*ImportPath,
     },
-    many: std.ArrayList(ImportPath),
 
     const IdentifierKind = @import("./types.zig").IdentifierKind;
     const PathData = struct { path: []const u8, last: []const u8 };
+    const Self = @This();
 
     pub fn collect_paths(self: *const Self, prefix: []const u8, collect: *std.ArrayList(Buf)) void {
         switch (self.*) {
@@ -64,7 +63,7 @@ pub const ImportPath = union(enum) {
                     collect.append(new_prefix) catch unreachable;
                 }
             },
-            .many => |components| {
+            .multiple => |components| {
                 for (components.items) |*comp| {
                     comp.collect_paths(prefix, collect);
                 }
@@ -142,9 +141,39 @@ pub const PathParser = struct {
                 collect.append(p) catch unreachable;
             },
             .use_as_clause, .use_list, .scoped_use_list, .use_wildcard => unreachable,
+            .bracketed_type => {
+                if (Node.getFirstChildNamed(node, .qualified_type)) |child| {
+                    const type_field = child.get_field_unchecked("type"); // , $._type),
+                    const lhs = type_field.extract_type_ref();
+                    _ = lhs; // autofix
 
+                    const alias_field = child.get_field_unchecked("alias"); // , $._type),
+                    const rhs = alias_field.extract_type_ref();
+
+                    var p = Buf.from("Any");
+                    p.append(rhs.identifier.text);
+                    collect.append(p) catch unreachable;
+                } else {
+                    var children = node.getNamedChildren();
+                    defer children.clearAndFree();
+                    std.debug.assert(children.items.len == 1);
+
+                    const child = children.items[0];
+                    self.path(child.*, collect);
+                }
+            },
+            .generic_type => @panic("todo: generic_type_with_turbofish"),
             else => {
                 self.parser.print_source(node.node);
+                const c = @import("../c.zig");
+                var parent = c.ts_node_parent(node.node);
+                parent = c.ts_node_parent(parent);
+
+                const tree = c.ts_node_string(parent);
+                std.debug.print("Tree: {s}\n", .{tree});
+                const name = @import("../node.zig").get_type(parent, self.allocator);
+
+                std.debug.print("Parent Name: {s}\n", .{name});
 
                 @panic("invalid node type");
             },
@@ -168,7 +197,7 @@ pub const PathParser = struct {
         };
 
         if (node.get_field("path")) |field| switch (field.node_type) {
-            .bracketed_type => @panic("todo"), // FIX:
+            .bracketed_type => unreachable,
             .generic_type => @panic("todo"),
             else => self.path(field.*, collect),
         };
@@ -339,7 +368,7 @@ pub const ImportPathParser = struct {
     }
 
     pub fn use_wildcard(self: Self, node: Node) ImportPath {
-        const children = node.get_children_named();
+        const children = node.getNamedChildren();
         std.debug.assert(children.items.len == 1);
         const child = children.items[0];
         var pathbuf = PathParser.init(self.allocator, self.parser, child.*).parse();
@@ -357,7 +386,7 @@ pub const ImportPathParser = struct {
     }
 
     pub fn use_list(self: Self, node: Node) ImportPath {
-        const children = node.get_children_named();
+        const children = node.getNamedChildren();
         var collect = std.ArrayList(ImportPath).init(self.allocator);
 
         for (children.items) |child| {
@@ -392,9 +421,7 @@ pub const ImportPathParser = struct {
             }
         }
 
-        return ImportPath{
-            .many = collect,
-        };
+        return ImportPath{ .multiple = collect };
     }
 
     fn extract_bracketed_type(_: *const @This(), _: *const Parser) void {

@@ -65,6 +65,15 @@ pub const Node = struct {
 
     const Self = @This();
 
+    pub fn getFirstChildNamed(node: Node, tag: NodeType) ?Node {
+        var children = node.getNamedChildren();
+        defer children.clearAndFree();
+
+        for (children.items) |child| if (child.*.node_type == tag) return child.*;
+
+        return null;
+    }
+
     pub fn init_with_context(allocator: std.mem.Allocator, node: c.TSNode, ctx: Ctx) *Self {
         const point_start = c.ts_node_start_point(node);
         const point_end = c.ts_node_end_point(node);
@@ -116,7 +125,7 @@ pub const Node = struct {
         assert(self.node_type == .declaration_list or
             self.node_type == .source_file);
 
-        const children: std.ArrayList(*Node) = self.get_children_named();
+        const children: std.ArrayList(*Node) = self.getNamedChildren();
         // defer children.clearAndFree(); //FIX:
         // defer for (children.items) |child| child.deinit(); // FIX:
 
@@ -234,7 +243,7 @@ pub const Node = struct {
                     } else break :ret null;
                 };
 
-                for (self.get_children_named().items) |child| {
+                for (self.getNamedChildren().items) |child| {
                     if (child.node_type == .where_clause) child.extract_where_clause(&bounds);
                 }
 
@@ -307,7 +316,7 @@ pub const Node = struct {
         return Node.init_with_context(self.allocator, result, self.ctx);
     }
 
-    pub fn get_children_named(self: *const Node) std.ArrayList(*Node) {
+    pub fn getNamedChildren(self: *const Node) std.ArrayList(*Node) {
         // FIX clear
         const ts_node = self.node;
 
@@ -364,7 +373,7 @@ pub const Node = struct {
     fn extract_type_parameters(self: *const Node, collect_bounds: *BoundsMap) ?std.ArrayList(TypeKind) {
         var params = std.ArrayList(TypeKind).init(self.allocator);
 
-        const children = self.get_children_named();
+        const children = self.getNamedChildren();
 
         for (children.items) |child| {
             if (child.node_type == .attribute_item) @panic("Todo");
@@ -391,23 +400,25 @@ pub const Node = struct {
 
                     params.append(typename) catch unreachable;
 
-                    const bounds = child.get_field_unchecked("bounds").get_children_named();
+                    const bounds = child.get_field_unchecked("bounds").getNamedChildren();
                     var typekinds = std.ArrayList(TypeKind).init(self.allocator);
 
                     for (bounds.items) |bound| {
                         switch (bound.node_type) {
                             .lifetime => std.log.info("skipping lifetime", .{}),
-                            .higher_ranked_trait_bound => @panic("todo: higher_ranked_trait_bound "),
+                            .higher_ranked_trait_bound => std.log.info("skipping higer ranked trait bounds", .{}),
                             else => {
                                 const typekind = bound.extract_type_ref();
                                 typekinds.append(typekind) catch unreachable;
                             },
                         }
                     }
-                    collect_bounds.putNoClobber(typename.identifier.text, typekinds) catch unreachable;
+                    collect_bounds.putNoClobber(typename.identifier, typekinds) catch unreachable;
                 },
                 .optional_type_parameter => @panic("todo:"),
-                .const_parameter => @panic("todo:"),
+                .const_parameter => {
+                    @panic("todo: const_param");
+                },
                 else => unreachable,
             }
         }
@@ -445,7 +456,7 @@ pub const Node = struct {
             // TODO: if get_field(body_field, "where_clause") |where_clause field| {}
 
             if (body_field.node_type == .field_declaration_list) {
-                const decls = body_field.get_children_named();
+                const decls = body_field.getNamedChildren();
                 for (decls.items) |decl| {
                     switch (decl.node_type) {
                         .field_declaration => {
@@ -471,7 +482,7 @@ pub const Node = struct {
             } else if (body_field.node_type == .ordered_field_declaration_list) {
                 ordered = true;
 
-                const children = body_field.get_children_named();
+                const children = body_field.getNamedChildren();
 
                 for (children.items) |child| {
                     // TODO: vis, attr
@@ -585,7 +596,7 @@ pub const Node = struct {
             annotations.append(text) catch unreachable;
         }
 
-        const children = self.get_children_named();
+        const children = self.getNamedChildren();
         for (children.items) |child| {
             if (child.node_type == .where_clause) child.extract_where_clause(&bounds);
         }
@@ -673,7 +684,7 @@ pub const Node = struct {
         const parser = self.ctx.parser;
         _ = parser; // autofix
         // todo: $visibility_modifier
-        const children = self.get_children_named();
+        const children = self.getNamedChildren();
         _ = children; // autofix
 
         const name_field = self.get_field_unchecked("name");
@@ -738,7 +749,7 @@ pub const Node = struct {
                 }).init(self.allocator); // FIX:
                 constraints = constraints; // FIX:
 
-                const children = type_args.get_children_named();
+                const children = type_args.getNamedChildren();
                 for (children.items) |child| {
                     if (child.node_type == .trait_bounds) {
                         @panic("todo");
@@ -807,7 +818,7 @@ pub const Node = struct {
             .tuple_type => {
                 var tuples_types = std.ArrayList(TypeKind).init(self.allocator); // FIX:
 
-                const children = self.get_children_named();
+                const children = self.getNamedChildren();
                 for (children.items) |child| {
                     tuples_types.append(child.extract_type_ref()) catch unreachable;
                 }
@@ -835,34 +846,35 @@ pub const Node = struct {
                 return .dynamic;
             },
             .bounded_type => {
-                std.log.warn("bounded_type ignored", .{});
+                std.log.info("ignoring bounded_type", .{});
                 return .none; // FIX:
             },
             .removed_trait_bound => {
-                @panic("todo");
+                std.log.info("skipped: removed trait bounds", .{});
+                return .none; // FIX:
             },
             .primitive_type => {
                 // FIX: test
 
                 const text = self.ctx.parser.node_to_string_alloc(self.node, self.allocator);
 
-                if (str.eql(text, "u16")) return .{ .primitive = .u16 };
-                if (str.eql(text, "u32")) return .{ .primitive = .u32 };
-                if (str.eql(text, "u64")) return .{ .primitive = .u64 };
-                if (str.eql(text, "u8")) return .{ .primitive = .u8 };
-                if (str.eql(text, "i16")) return .{ .primitive = .i16 };
-                if (str.eql(text, "i32")) return .{ .primitive = .i32 };
-                if (str.eql(text, "i64")) return .{ .primitive = .i64 };
-                if (str.eql(text, "i8")) return .{ .primitive = .i8 };
-                if (str.eql(text, "char")) return .{ .primitive = .char };
-                if (str.eql(text, "str")) return .{ .primitive = .str };
-                if (str.eql(text, "bool")) return .{ .primitive = .bool };
-                if (str.eql(text, "u128")) return .{ .primitive = .u128 };
-                if (str.eql(text, "i128")) return .{ .primitive = .i128 };
-                if (str.eql(text, "isize")) return .{ .primitive = .isize };
-                if (str.eql(text, "usize")) return .{ .primitive = .usize };
-                if (str.eql(text, "f32")) return .{ .primitive = .f32 };
-                if (str.eql(text, "f64")) return .{ .primitive = .f64 };
+                if (str.eql(text, "u16")) return .{ .identifier = IdentifierKind{ .primitive = .u16 } };
+                if (str.eql(text, "u32")) return .{ .identifier = IdentifierKind{ .primitive = .u32 } };
+                if (str.eql(text, "u64")) return .{ .identifier = IdentifierKind{ .primitive = .u64 } };
+                if (str.eql(text, "u8")) return .{ .identifier = IdentifierKind{ .primitive = .u8 } };
+                if (str.eql(text, "i16")) return .{ .identifier = IdentifierKind{ .primitive = .i16 } };
+                if (str.eql(text, "i32")) return .{ .identifier = IdentifierKind{ .primitive = .i32 } };
+                if (str.eql(text, "i64")) return .{ .identifier = IdentifierKind{ .primitive = .i64 } };
+                if (str.eql(text, "i8")) return .{ .identifier = IdentifierKind{ .primitive = .i8 } };
+                if (str.eql(text, "char")) return .{ .identifier = IdentifierKind{ .primitive = .char } };
+                if (str.eql(text, "str")) return .{ .identifier = IdentifierKind{ .primitive = .str } };
+                if (str.eql(text, "bool")) return .{ .identifier = IdentifierKind{ .primitive = .bool } };
+                if (str.eql(text, "u128")) return .{ .identifier = IdentifierKind{ .primitive = .u128 } };
+                if (str.eql(text, "i128")) return .{ .identifier = IdentifierKind{ .primitive = .i128 } };
+                if (str.eql(text, "isize")) return .{ .identifier = IdentifierKind{ .primitive = .isize } };
+                if (str.eql(text, "usize")) return .{ .identifier = IdentifierKind{ .primitive = .usize } };
+                if (str.eql(text, "f32")) return .{ .identifier = IdentifierKind{ .primitive = .f32 } };
+                if (str.eql(text, "f64")) return .{ .identifier = IdentifierKind{ .primitive = .f64 } };
 
                 unreachable;
             },
@@ -906,7 +918,7 @@ pub const Node = struct {
 
         // TODO: field('body') //  $.block;
 
-        const children = self.get_children_named();
+        const children = self.getNamedChildren();
         for (children.items) |child| {
             if (child.node_type == .where_clause) {
                 child.extract_where_clause(&bounds);
@@ -926,10 +938,8 @@ pub const Node = struct {
         return result;
     }
 
-    const BoundsMap = std.StringArrayHashMap(std.ArrayList(TypeKind));
-
     fn extract_where_clause(self: *const Self, collect_bounds: *BoundsMap) void {
-        const children = self.get_children_named();
+        const children = self.getNamedChildren();
 
         assert(children.items.len > 0);
 
@@ -943,7 +953,10 @@ pub const Node = struct {
 
             switch (left_field.node_type) {
                 .lifetime => @panic("todo: lifetime "),
-                .scoped_type_identifier => @panic("todo: scoped_type_identifier "),
+                .scoped_type_identifier => {
+                    const scoped_type = left_field.extract_type_ref();
+                    identifier = scoped_type.identifier;
+                },
                 .generic_type => @panic("todo: generic_type "),
                 .reference_type => @panic("todo: reference_type "),
                 .pointer_type => @panic("todo: pointer_type "),
@@ -958,13 +971,13 @@ pub const Node = struct {
                 },
             }
 
-            const bounds = child.get_field_unchecked("bounds").get_children_named();
+            const bounds = child.get_field_unchecked("bounds").getNamedChildren();
             var bounds_list = std.ArrayList(TypeKind).init(self.allocator);
 
             for (bounds.items) |bound| {
                 switch (bound.node_type) {
-                    .lifetime => @panic("todo: lifetime "),
-                    .higher_ranked_trait_bound => @panic("todo: higher_ranked_trait_bound "),
+                    .lifetime => std.log.info("skipping: lifetime ", .{}),
+                    .higher_ranked_trait_bound => std.log.info("skipping higer_ranked_trait_bounds", .{}),
                     else => {
                         const typekind = bound.extract_type_ref();
                         bounds_list.append(typekind) catch unreachable;
@@ -985,7 +998,7 @@ pub const Node = struct {
         const parser = self.ctx.parser;
         var result = std.ArrayList(procedure.Param).init(self.allocator);
 
-        const children = self.get_children_named();
+        const children = self.getNamedChildren();
         for (children.items) |child| {
             if (child.node_type == .attribute_item) unreachable;
 
@@ -1004,7 +1017,7 @@ pub const Node = struct {
                         const pattern_field = Node.init_with_context(self.allocator, tsnode, self.ctx); // ( $_pattern | $self )
 
                         if (pattern_field.node_type == .self) {
-                            break :blk_name IdentifierKind{ .text = "self" }; // TODO EnumLiteral
+                            break :blk_name .self;
                         } else {
                             const name = pattern_field.extract_pattern();
 
@@ -1017,9 +1030,25 @@ pub const Node = struct {
 
                     break :blk .{ name, typename };
                 } else if (child.node_type == .self_parameter) {
+                    const text = parser.node_to_string(child.node);
+                    var is_ref = false;
+                    var is_mut = false;
+
+                    if (mem.containsAtLeast(u8, text, 1, "&")) {
+                        is_ref = true;
+                    }
+                    if (mem.containsAtLeast(u8, text, 1, "mu")) {
+                        is_mut = true;
+                    }
+
                     const name: IdentifierKind = .self;
-                    parser.print_source(child.node);
-                    break :blk .{ name, .self };
+
+                    const typekind: TypeKind = .{ .self = .{
+                        .is_ref = is_ref,
+                        .is_mut = is_mut,
+                    } };
+
+                    break :blk .{ name, typekind };
                 } else if (child.node_type == .variadic_parameter) {
                     @panic("todo");
                 } else { // _type
@@ -1065,7 +1094,12 @@ pub const Node = struct {
 
             // $.identifier,
             // $.scoped_identifier,
-            // $.tuple_pattern,
+            .tuple_pattern => {
+                const text = self.ctx.parser.node_to_string(self.node);
+                return IdentifierKind{
+                    .matched = .{ .tuple_pattern = text },
+                };
+            },
             // $.tuple_struct_pattern,
             .struct_pattern => {
                 var type_field = self.get_field_unchecked("type");
@@ -1096,7 +1130,9 @@ pub const Node = struct {
                         const text = self.ctx.parser.node_to_string(field.node);
 
                         const result = IdentifierKind{
-                            .matched = text, // FIX:
+                            .matched = .{
+                                .field_pattern = text,
+                            },
                         };
                         return result;
                     } else {
@@ -1110,7 +1146,13 @@ pub const Node = struct {
             // $.ref_pattern,
             // $.slice_pattern,
             // $.captured_pattern,
-            // $.reference_pattern,
+            .reference_pattern => {
+                const text = self.ctx.parser.node_to_string(self.node);
+
+                return IdentifierKind{
+                    .matched = .{ .reference_pattern = text },
+                };
+            },
             // $.remaining_field_pattern,
             // $.mut_pattern,
             // $.range_pattern,
@@ -1150,7 +1192,7 @@ pub const Node = struct {
 
     fn extract_enum_variants(self: *const @This()) std.ArrayList(object.Enum.Variant) {
         const parser = self.ctx.parser;
-        const children = self.get_children_named(); // FIX:
+        const children = self.getNamedChildren(); // FIX:
 
         var variants = std.ArrayList(object.Enum.Variant).init(self.allocator); // FIX:
 
@@ -1193,9 +1235,9 @@ pub const Node = struct {
         };
 
         const type_field = self.get_field_unchecked("type");
-        const implementor_identifier = type_field.extract_type_ref().identifier;
+        const implementor_identifier = type_field.extract_type_ref();
 
-        const children = self.get_children_named();
+        const children = self.getNamedChildren();
         for (children.items) |child| {
             if (child.node_type == .where_clause) child.extract_where_clause(&bounds);
         }
@@ -1299,9 +1341,14 @@ pub const Node = struct {
     fn extract_abstract_type(self: *const Self) TypeKind {
         if (self.get_field("type_parameters")) |_| @panic("todo");
 
-        var trait_field = self.get_field_unchecked("trait");
+        const trait_field = self.get_field_unchecked("trait");
         return switch (trait_field.node_type) {
-            .scoped_type_identifier => @panic("todo"),
+            .scoped_type_identifier => {
+                const scoped_type = trait_field.extract_type_ref();
+                const type_identifier = scoped_type;
+                assert(type_identifier == .identifier);
+                return type_identifier;
+            },
             .removed_trait_bound => @panic("todo"),
 
             .generic_type => {
@@ -1315,7 +1362,7 @@ pub const Node = struct {
 
                 return typekind;
             },
-            .tuple_type => unreachable,
+            .tuple_type => @panic("todo: tuple_type"),
             else => {
                 // ._type_identifier
                 const type_kind = trait_field.extract_type_ref();
@@ -1405,7 +1452,7 @@ pub const Node = struct {
             };
             return result;
         } else {
-            const children = self.get_children_named();
+            const children = self.getNamedChildren();
             for (children.items) |child| {
                 if (child.node_type != .function_modifiers) continue;
                 var buffer = [_]u8{0} ** 10;

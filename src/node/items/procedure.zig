@@ -12,7 +12,7 @@ pub const Procedure = struct {
     params: []const Param,
     return_type: TypeKind,
 
-    pub fn get_bounds(self: *const @This(), type_param_identifier: []const u8) ?[]const TypeKind {
+    pub fn get_bounds(self: *const @This(), type_param_identifier: IdentifierKind) ?[]const TypeKind {
         if (self.bounds) |bounds| {
             const result = bounds.get(type_param_identifier) orelse return null;
             return result.items;
@@ -29,7 +29,7 @@ pub const Procedure = struct {
                 assert(generic == .identifier);
                 try fmt.format(writer, "{s}: ", .{generic});
 
-                if (self.get_bounds(generic.identifier.text)) |bounds|
+                if (self.get_bounds(generic.identifier)) |bounds|
                     for (bounds) |bound| fmt.format(writer, "{}, ", .{bound}) catch unreachable; //FIX: infered error
 
                 try fmt.format(writer, "\n", .{});

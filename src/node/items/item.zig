@@ -29,11 +29,30 @@ pub const Impl = struct {
     for_interface: ?IdentifierKind,
 };
 
+pub const MatchedIdentifier = union(enum) {
+    field_pattern: []const u8,
+    tuple_pattern: []const u8,
+    reference_pattern: []const u8,
+
+    pub fn format(self: *const @This(), comptime _: []const u8, _: fmt.FormatOptions, writer: anytype) !void {
+        switch (self.*) {
+            .field_pattern => |text| {
+                try fmt.format(writer, "{s}", .{text});
+            },
+            else => @panic("todo:"),
+        }
+    }
+};
+
+pub const PrimitiveKind = enum { u16, u32, u64, u8, u128, usize, i16, i32, i64, i8, i128, isize, f32, f64, char, str, bool };
+
 pub const IdentifierKind = union(enum) {
     discarded, // FIX: '_'
     generic: struct { name: []const u8 },
-    matched: []const u8, // TODO:
+    matched: MatchedIdentifier,
     scoped: Buf,
+    primitive: PrimitiveKind, // FIX:
+
     self,
     text: []const u8, // TODO: remove
 
@@ -43,7 +62,14 @@ pub const IdentifierKind = union(enum) {
         switch (self) {
             .discarded => try fmt.format(writer, "_", .{}),
             .generic => |generic| try fmt.format(writer, "{s}", .{generic.name}),
-            .matched => |matched| try fmt.format(writer, "{s}", .{matched}),
+            .matched => |matched| try fmt.format(writer, "{}", .{matched}),
+            .primitive => |prim| {
+                switch (prim) {
+                    .char => try fmt.format(writer, "u8", .{}),
+                    .str => try fmt.format(writer, "[]const u8", .{}),
+                    else => try fmt.format(writer, "{s}", .{@tagName(prim)}),
+                }
+            },
             .scoped => |pathbuf| try fmt.format(writer, "{s}", .{pathbuf.str()}),
             .self => try fmt.format(writer, "self", .{}),
             .text => |name| return fmt.format(writer, "{s}", .{name}),
@@ -70,7 +96,7 @@ pub const SerializeContext = struct {
     ) void {
         for (self.impls) |*item| {
             if (item.for_interface) |_| {
-                if (str.eql(item.implementor.text, object_name)) {
+                if (str.eql(item.implementor.identifier.text, object_name)) {
                     collect.append(item) catch unreachable;
                 }
             }

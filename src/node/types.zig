@@ -342,14 +342,13 @@ pub const TypeKind = union(enum) {
     identifier: IdentifierKind,
     none,
     no_return: void,
-    primitive: enum { u16, u32, u64, u8, u128, usize, i16, i32, i64, i8, i128, isize, f32, f64, char, str, bool }, // FIX:
     proc: struct {
         params: ?std.ArrayList(procedure.Param),
         return_type: ?*const TypeKind,
     },
     ref: struct { child: *const TypeKind }, // TODO: is_mut: bool
     tuple: std.ArrayList(TypeKind),
-    self,
+    self: struct { is_ref: bool, is_mut: bool },
 
     pub fn format(
         self: TypeKind,
@@ -367,13 +366,6 @@ pub const TypeKind = union(enum) {
                     if (idx != (tuple_items.items.len - 1)) try fmt.format(writer, ", ", .{});
                 }
                 try fmt.format(writer, "}} ", .{});
-            },
-            .primitive => |prim| {
-                switch (prim) {
-                    .char => try fmt.format(writer, "u8", .{}),
-                    .str => try fmt.format(writer, "[]const u8", .{}),
-                    else => try fmt.format(writer, "{s}", .{@tagName(prim)}),
-                }
             },
             .array => |array| {
                 const brackets = array.length_expr orelse "[]";
@@ -399,7 +391,11 @@ pub const TypeKind = union(enum) {
                     try fmt.format(writer, "void", .{});
                 }
             },
-            .self => try fmt.format(writer, "Self", .{}),
+            .self => |s| {
+                const ref = if (s.is_ref) "*" else "";
+                const mut = if (s.is_mut) "" else "const";
+                try fmt.format(writer, "{s}{s} @This()", .{ ref, mut });
+            },
             .dynamic => @panic("todo:"),
         }
     }
