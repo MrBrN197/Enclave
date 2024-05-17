@@ -1,12 +1,13 @@
+const BoundsMap = @import("./interface.zig").BoundsMap;
 const IdentifierKind = @import("./item.zig").IdentifierKind;
 const TypeKind = @import("../types.zig").TypeKind;
 
-const std = @import("std");
-const fmt = std.fmt;
 const assert = std.debug.assert;
+const fmt = std.fmt;
+const std = @import("std");
 
 pub const Procedure = struct {
-    bounds: ?std.StringArrayHashMap(std.ArrayList(TypeKind)),
+    bounds: ?BoundsMap,
     generics: ?std.ArrayList(TypeKind),
     params: []const Param,
     return_type: TypeKind,

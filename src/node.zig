@@ -15,6 +15,7 @@ const eprintln = root.eprintln;
 const eprint = root.eprint;
 
 const Allocator = std.mem.Allocator;
+const BoundsMap = items.interface.BoundsMap;
 const Buf = path.Buf;
 const Parser = parse.Parser;
 const Writer = @TypeOf(std.io.getStdOut().writer());
@@ -970,7 +971,11 @@ pub const Node = struct {
                     },
                 }
             }
-            collect_bounds.putNoClobber(identifier.text, bounds_list) catch unreachable;
+
+            const get_or_put = collect_bounds.getOrPut(identifier) catch unreachable;
+            if (!get_or_put.found_existing) {
+                get_or_put.value_ptr.* = bounds_list;
+            }
         }
     }
 

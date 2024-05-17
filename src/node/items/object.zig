@@ -1,12 +1,13 @@
-const std = @import("std");
-const TypeKind = @import("./item.zig").TypeKind;
+const BoundsMap = @import("./interface.zig").BoundsMap;
 const Impl = @import("./item.zig").Impl;
 const SerializeContext = @import("./item.zig").SerializeContext;
+const TypeKind = @import("./item.zig").TypeKind;
 
 const fmt = std.fmt;
+const std = @import("std");
 
 pub const Object = struct {
-    bounds: std.StringArrayHashMap(std.ArrayList(TypeKind)),
+    bounds: BoundsMap,
     fields: []Field,
     ordered: bool,
     generics: ?std.ArrayList(TypeKind),

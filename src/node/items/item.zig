@@ -16,13 +16,16 @@ pub const Object = @import("./object.zig").Object;
 pub const Procedure = @import("./procedure.zig").Procedure;
 pub const TypeKind = @import("../types.zig").TypeKind;
 pub const FnSignature = @import("./fn.zig").FnSignature;
-pub const Trait = @import("./interface.zig").Trait;
+pub const Trait = interface.Trait;
+pub const BoundsMap = interface.BoundsMap;
+
+pub const interface = @import("./interface.zig");
 
 pub const Impl = struct {
     body: ?Module,
-    bounds: std.StringArrayHashMap(std.ArrayList(TypeKind)),
+    bounds: BoundsMap,
     generics: ?std.ArrayList(TypeKind),
-    implementor: IdentifierKind,
+    implementor: TypeKind,
     for_interface: ?IdentifierKind,
 };
 
@@ -94,9 +97,9 @@ pub const SerializeContext = struct {
             const item = value.value_ptr;
 
             switch (item.data) {
-                .trait_item => |*interface| {
+                .trait_item => |*iface| {
                     var procedures = std.ArrayList(FnSignatureItem).init(std.heap.page_allocator);
-                    for (interface.body.node_items.items) |*i| {
+                    for (iface.body.node_items.items) |*i| {
                         switch (i.data) {
                             .function_signature_item => |*proc| {
                                 procedures.append(.{
