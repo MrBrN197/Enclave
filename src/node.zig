@@ -18,7 +18,7 @@ const Allocator = std.mem.Allocator;
 const Buf = path.Buf;
 const Parser = parse.Parser;
 const Writer = @TypeOf(std.io.getStdOut().writer());
-pub const IdentifierKind = node_types.IdentifierKind;
+pub const Identifier = node_types.Identifier;
 pub const Import = @import("./node/items/item.zig").Import;
 pub const ImportPath = node_types.ImportPath;
 pub const ImportPathParser = path.ImportPathParser;
@@ -121,6 +121,7 @@ pub const Node = struct {
 
         std.log.warn("todo: deinit", .{});
         // FIX:
+
     }
 
     pub fn extract_type_item(self: *Node) NodeItem {
@@ -128,6 +129,7 @@ pub const Node = struct {
 
         const name_field = self.get_field_unchecked("name"); //  $_type_identifier
         const typename = self.ctx.parser.node_to_string_alloc(name_field.node, self.allocator);
+
         // TODO: const type_parameters_field = if (self.get_field("type_parameters")) //  $type_parameters
 
         const type_field = self.get_field_unchecked("type"); // $_type
@@ -140,7 +142,9 @@ pub const Node = struct {
             },
         };
 
-        const type_item = NodeItem.init(item_data, typename);
+        const type_item = NodeItem.init(item_data, Identifier{
+            .text = typename,
+        });
         return type_item;
     }
 
@@ -246,7 +250,7 @@ pub const Node = struct {
                 // TODO: function_modifiers
 
                 const name_field = self.get_field_unchecked("name");
-                const name = name_field.extract_type_ref().identifier;
+                const identifier = name_field.extract_type_ref().identifier;
 
                 const params_field = self.get_field_unchecked("parameters");
                 const params = params_field.extract_parameters();
@@ -283,11 +287,15 @@ pub const Node = struct {
                     },
                 };
 
-                const item = NodeItem.init(function_signature_data, name.text);
+                const item = NodeItem.init(
+                    function_signature_data,
+                    identifier,
+                );
+
                 self.ctx.items.append(item) catch unreachable;
             },
 
-            .attribute_item => {}, // TODO
+            .attribute_item, .inner_attribute_item => {}, // TODO
             .expression_statement => {}, // TODO:
 
             .block_comment, .line_comment => {},
@@ -480,7 +488,7 @@ pub const Node = struct {
         assert(self.node_type == .struct_item);
 
         const struct_name_field = self.get_field_unchecked("name"); // $.identifier,
-        const struct_name = struct_name_field.extract_type_ref().identifier;
+        const identifier = struct_name_field.extract_type_ref().identifier;
 
         const generics: ?std.ArrayList(TypeParam) = params: {
             if (self.get_field("type_parameters")) |type_parameters| {
@@ -544,7 +552,7 @@ pub const Node = struct {
             },
         };
 
-        const result = NodeItem.init(object_data, struct_name.text);
+        const result = NodeItem.init(object_data, identifier);
         return result;
     }
 
@@ -559,7 +567,7 @@ pub const Node = struct {
         const name_ = name_field.extract_type_ref();
 
         assert(name_ == .identifier);
-        const name = name_.identifier.text;
+        const identifier = name_.identifier;
 
         const type_field = self.get_field_unchecked("type");
         const type_kind = type_field.extract_type_ref();
@@ -577,7 +585,7 @@ pub const Node = struct {
                 .value_expr = value_expr,
             },
         };
-        const result = NodeItem.init(item_data, name);
+        const result = NodeItem.init(item_data, identifier);
         return result;
     }
 
@@ -591,7 +599,7 @@ pub const Node = struct {
         const name_ = name_field.extract_type_ref();
 
         assert(name_ == .identifier);
-        const name = name_.identifier.text;
+        const identifier = name_.identifier;
 
         const type_field = self.get_field_unchecked("type");
         const type_kind = type_field.extract_type_ref();
@@ -609,7 +617,7 @@ pub const Node = struct {
                 .value_expr = value_expr,
             },
         };
-        const result = NodeItem.init(item_data, name);
+        const result = NodeItem.init(item_data, identifier);
         return result;
     }
 
@@ -666,7 +674,7 @@ pub const Node = struct {
                 .generics = generics,
             },
         };
-        var result = NodeItem.init(item_data, name.identifier.text);
+        var result = NodeItem.init(item_data, name.identifier);
         result.annotations = annotations; // FIX:
         return result;
     }
@@ -708,7 +716,9 @@ pub const Node = struct {
         const data = NodeItem.Data{
             .module_item = module,
         };
-        const result = NodeItem.init(data, name);
+        const result = NodeItem.init(data, Identifier{
+            .text = name,
+        });
 
         return result;
     }
@@ -746,7 +756,7 @@ pub const Node = struct {
             .{
                 .module_item = module,
             },
-            name.identifier.text,
+            name.identifier,
         );
         return result;
     }
@@ -884,14 +894,26 @@ pub const Node = struct {
                 return .no_return;
             },
             .dynamic_type => {
-                return .dynamic;
+                const trait_field = self.get_field_unchecked("trait");
+                const child_type = trait_field.extract_type_ref();
+
+                const child = self.allocator.create(@TypeOf(child_type)) catch unreachable; // FIX: HACK:
+                child.* = child_type;
+
+                const result = TypeKind{
+                    .ref = .{
+                        .child = child,
+                    },
+                }; // FIX: pointer type
+
+                return result;
             },
             .bounded_type => {
-                std.log.info("ignoring bounded_type", .{});
+                std.log.debug("ignoring bounded_type", .{});
                 return .none; // FIX:
             },
             .removed_trait_bound => {
-                std.log.info("skipped: removed trait bounds", .{});
+                std.log.debug("skipped: removed trait bounds", .{});
                 return .none; // FIX:
             },
             .primitive_type => {
@@ -899,23 +921,23 @@ pub const Node = struct {
 
                 const text = self.ctx.parser.node_to_string_alloc(self.node, self.allocator);
 
-                if (str.eql(text, "u16")) return .{ .identifier = IdentifierKind{ .primitive = .u16 } };
-                if (str.eql(text, "u32")) return .{ .identifier = IdentifierKind{ .primitive = .u32 } };
-                if (str.eql(text, "u64")) return .{ .identifier = IdentifierKind{ .primitive = .u64 } };
-                if (str.eql(text, "u8")) return .{ .identifier = IdentifierKind{ .primitive = .u8 } };
-                if (str.eql(text, "i16")) return .{ .identifier = IdentifierKind{ .primitive = .i16 } };
-                if (str.eql(text, "i32")) return .{ .identifier = IdentifierKind{ .primitive = .i32 } };
-                if (str.eql(text, "i64")) return .{ .identifier = IdentifierKind{ .primitive = .i64 } };
-                if (str.eql(text, "i8")) return .{ .identifier = IdentifierKind{ .primitive = .i8 } };
-                if (str.eql(text, "char")) return .{ .identifier = IdentifierKind{ .primitive = .char } };
-                if (str.eql(text, "str")) return .{ .identifier = IdentifierKind{ .primitive = .str } };
-                if (str.eql(text, "bool")) return .{ .identifier = IdentifierKind{ .primitive = .bool } };
-                if (str.eql(text, "u128")) return .{ .identifier = IdentifierKind{ .primitive = .u128 } };
-                if (str.eql(text, "i128")) return .{ .identifier = IdentifierKind{ .primitive = .i128 } };
-                if (str.eql(text, "isize")) return .{ .identifier = IdentifierKind{ .primitive = .isize } };
-                if (str.eql(text, "usize")) return .{ .identifier = IdentifierKind{ .primitive = .usize } };
-                if (str.eql(text, "f32")) return .{ .identifier = IdentifierKind{ .primitive = .f32 } };
-                if (str.eql(text, "f64")) return .{ .identifier = IdentifierKind{ .primitive = .f64 } };
+                if (str.eql(text, "u16")) return .{ .identifier = Identifier{ .primitive = .u16 } };
+                if (str.eql(text, "u32")) return .{ .identifier = Identifier{ .primitive = .u32 } };
+                if (str.eql(text, "u64")) return .{ .identifier = Identifier{ .primitive = .u64 } };
+                if (str.eql(text, "u8")) return .{ .identifier = Identifier{ .primitive = .u8 } };
+                if (str.eql(text, "i16")) return .{ .identifier = Identifier{ .primitive = .i16 } };
+                if (str.eql(text, "i32")) return .{ .identifier = Identifier{ .primitive = .i32 } };
+                if (str.eql(text, "i64")) return .{ .identifier = Identifier{ .primitive = .i64 } };
+                if (str.eql(text, "i8")) return .{ .identifier = Identifier{ .primitive = .i8 } };
+                if (str.eql(text, "char")) return .{ .identifier = Identifier{ .primitive = .char } };
+                if (str.eql(text, "str")) return .{ .identifier = Identifier{ .primitive = .str } };
+                if (str.eql(text, "bool")) return .{ .identifier = Identifier{ .primitive = .bool } };
+                if (str.eql(text, "u128")) return .{ .identifier = Identifier{ .primitive = .u128 } };
+                if (str.eql(text, "i128")) return .{ .identifier = Identifier{ .primitive = .i128 } };
+                if (str.eql(text, "isize")) return .{ .identifier = Identifier{ .primitive = .isize } };
+                if (str.eql(text, "usize")) return .{ .identifier = Identifier{ .primitive = .usize } };
+                if (str.eql(text, "f32")) return .{ .identifier = Identifier{ .primitive = .f32 } };
+                if (str.eql(text, "f64")) return .{ .identifier = Identifier{ .primitive = .f64 } };
 
                 unreachable;
             },
@@ -979,7 +1001,9 @@ pub const Node = struct {
             },
         };
 
-        const result = NodeItem.init(item_data, name);
+        const result = NodeItem.init(item_data, Identifier{
+            .text = name,
+        });
         return result;
     }
 
@@ -1049,7 +1073,7 @@ pub const Node = struct {
                     const tsnode = c.ts_node_child_by_field_name(child.node, field_name.ptr, @truncate(field_name.len));
                     const text = parser.node_to_string_alloc(tsnode, self.allocator);
 
-                    const name: IdentifierKind = blk_name: {
+                    const name: Identifier = blk_name: {
                         if (str.eql(text, "_")) break :blk_name .discarded; //FIX:
 
                         const pattern_field = Node.init_with_context(self.allocator, tsnode, self.ctx); // ( $_pattern | $self )
@@ -1079,7 +1103,7 @@ pub const Node = struct {
                         is_mut = true;
                     }
 
-                    const name: IdentifierKind = .self;
+                    const name: Identifier = .self;
 
                     const typekind: TypeKind = .{ .self = .{
                         .is_ref = is_ref,
@@ -1093,7 +1117,7 @@ pub const Node = struct {
                     const text = parser.node_to_string_alloc(child.node, self.allocator);
 
                     if (str.eql(text, "_")) {
-                        break :blk .{ IdentifierKind{ .text = text }, null };
+                        break :blk .{ Identifier{ .text = text }, null };
                     } else {
                         break :blk .{
                             null,
@@ -1115,11 +1139,11 @@ pub const Node = struct {
 
     fn extract_pattern(
         self: *const Node,
-    ) IdentifierKind {
+    ) Identifier {
         switch (self.node_type) {
             .identifier => {
                 const source = self.ctx.parser.node_to_string_alloc(self.node, self.allocator);
-                return IdentifierKind{ .text = source };
+                return Identifier{ .text = source };
             },
             // _literal_pattern,
             // $.string_literal,
@@ -1134,7 +1158,7 @@ pub const Node = struct {
             // $.scoped_identifier,
             .tuple_pattern => {
                 const text = self.ctx.parser.node_to_string(self.node);
-                return IdentifierKind{
+                return Identifier{
                     .matched = .{ .tuple_pattern = text },
                 };
             },
@@ -1167,7 +1191,7 @@ pub const Node = struct {
 
                         const text = self.ctx.parser.node_to_string(field.node);
 
-                        const result = IdentifierKind{
+                        const result = Identifier{
                             .matched = .{
                                 .field_pattern = text,
                             },
@@ -1187,7 +1211,7 @@ pub const Node = struct {
             .reference_pattern => {
                 const text = self.ctx.parser.node_to_string(self.node);
 
-                return IdentifierKind{
+                return Identifier{
                     .matched = .{ .reference_pattern = text },
                 };
             },
@@ -1224,7 +1248,9 @@ pub const Node = struct {
                 .variants = variants.items,
             },
         };
-        const result = NodeItem.init(item_data, name);
+        const result = NodeItem.init(item_data, Identifier{
+            .text = name,
+        });
         return result;
     }
 

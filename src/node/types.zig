@@ -1,16 +1,15 @@
+const assert = std.debug.assert;
 const eprint = @import("../root.zig").eprint;
 const eprintln = @import("../root.zig").eprintln;
-const std = @import("std");
-const str = @import("../str.zig");
-
-const assert = std.debug.assert;
 const fmt = std.fmt;
 const mem = std.mem;
-
-pub const NodeItem = @import("./items/item.zig").NodeItem;
-pub const ImportPath = @import("./path.zig").ImportPath;
-pub const IdentifierKind = @import("./items/item.zig").IdentifierKind;
+const std = @import("std");
+const str = @import("../str.zig");
 const procedure = @import("./items/procedure.zig");
+
+pub const Identifier = @import("./items/item.zig").Identifier;
+pub const ImportPath = @import("./path.zig").ImportPath;
+pub const NodeItem = @import("./items/item.zig").NodeItem;
 
 pub const NodeType = enum {
     abstract_type,
@@ -338,8 +337,7 @@ pub const NodeType = enum {
 
 pub const TypeKind = union(enum) {
     array: struct { length_expr: ?[]const u8, child: *const TypeKind },
-    dynamic,
-    identifier: IdentifierKind,
+    identifier: Identifier,
     none,
     no_return: void,
     proc: struct {
@@ -396,7 +394,6 @@ pub const TypeKind = union(enum) {
                 const mut = if (s.is_mut) "" else "const";
                 try fmt.format(writer, "{s}{s} @This()", .{ ref, mut });
             },
-            .dynamic => @panic("todo:"),
         }
     }
 };

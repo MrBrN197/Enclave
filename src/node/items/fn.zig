@@ -1,7 +1,8 @@
+const procedure = @import("./procedure.zig");
 const std = @import("std");
 
+const Identifier = @import("./item.zig").Identifier;
 const TypeKind = @import("./item.zig").TypeKind;
-const procedure = @import("./procedure.zig");
 const TypeParam = @import("./item.zig").TypeParam;
 
 pub const FnSignature = struct {
@@ -9,7 +10,7 @@ pub const FnSignature = struct {
     params: std.ArrayList(procedure.Param),
     return_type: ?TypeKind,
 
-    pub fn serialize(self: *const @This(), writer: anytype, name: []const u8) !void {
+    pub fn serialize(self: *const @This(), writer: anytype, name: Identifier) !void {
         // TODO: bounds
 
         try std.fmt.format(writer, "{s}Fn: *const fn(", .{name});

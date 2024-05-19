@@ -16,6 +16,7 @@ pub const Object = @import("./object.zig").Object;
 pub const Procedure = @import("./procedure.zig").Procedure;
 pub const TypeKind = @import("../types.zig").TypeKind;
 pub const FnSignature = @import("./fn.zig").FnSignature;
+
 pub const Trait = interface.Trait;
 
 pub const interface = @import("./interface.zig");
@@ -39,7 +40,7 @@ pub const Impl = struct {
     body: ?Module,
     generics: ?std.ArrayList(TypeParam),
     implementor: TypeKind,
-    for_interface: ?IdentifierKind,
+    for_interface: ?Identifier,
 };
 
 pub const MatchedIdentifier = union(enum) {
@@ -59,13 +60,12 @@ pub const MatchedIdentifier = union(enum) {
 
 pub const PrimitiveKind = enum { u16, u32, u64, u8, u128, usize, i16, i32, i64, i8, i128, isize, f32, f64, char, str, bool };
 
-pub const IdentifierKind = union(enum) {
+pub const Identifier = union(enum) {
     discarded, // FIX: '_'
     generic: struct { name: []const u8 },
     matched: MatchedIdentifier,
-    scoped: Buf,
     primitive: PrimitiveKind, // FIX:
-
+    scoped: Buf,
     self,
     text: []const u8, // TODO: remove
 
@@ -88,29 +88,55 @@ pub const IdentifierKind = union(enum) {
             .text => |name| return fmt.format(writer, "{s}", .{name}),
         }
     }
+
+    pub fn eql(lhs: Identifier, rhs: Identifier) bool {
+        if (@intFromEnum(lhs) != @intFromEnum(rhs)) return false; // FIX:
+
+        switch (lhs) {
+            .text => return str.eql(rhs.text, lhs.text),
+            else => @panic("todo:"),
+        }
+
+        return false;
+    }
 };
 
 pub const TypeItem = struct {
     kind: TypeKind,
 
-    pub fn serialize(self: *const @This(), writer: anytype, name: []const u8) !void {
+    pub fn serialize(self: *const @This(), writer: anytype, name: Identifier) !void {
         try fmt.format(writer, "//type\nconst {s} = {};\n", .{ name, self.kind });
     }
 };
 
 pub const SerializeContext = struct {
-    items: std.StringHashMap(NodeItem),
+    items: ItemsMap,
     impls: []const Impl,
+
+    pub const ItemsMap = std.ArrayHashMap(
+        Identifier,
+        NodeItem,
+        ItemMapContext,
+        false,
+    );
+    const ItemMapContext = struct {
+        pub fn hash(_: @This(), id: Identifier) u32 {
+            return @intFromEnum(id); // FIX: HACK:
+
+        }
+
+        pub const eql = std.array_hash_map.getAutoEqlFn(Identifier, @This());
+    };
 
     pub fn getImpls(
         self: *const @This(),
-        object_name: []const u8,
+        object_id: Identifier,
         collect: *std.ArrayList(*const Impl),
     ) void {
-        for (self.impls) |*item| {
-            if (item.for_interface) |_| {
-                if (str.eql(item.implementor.identifier.text, object_name)) {
-                    collect.append(item) catch unreachable;
+        for (self.impls) |*impl| {
+            if (impl.for_interface) |for_interface| {
+                if (Identifier.eql(for_interface, object_id)) {
+                    collect.append(impl) catch unreachable;
                 }
             }
         }
@@ -120,7 +146,7 @@ pub const SerializeContext = struct {
 
     const FnSignatureItem = struct {
         data: *const FnSignature,
-        name: []const u8,
+        name: Identifier,
     };
     const Interface = struct {
         procedures: std.ArrayList(FnSignatureItem),
@@ -128,7 +154,7 @@ pub const SerializeContext = struct {
 
     pub fn getInterface(
         self: *const @This(),
-        impl_name: []const u8,
+        interface_id: Identifier,
     ) !Interface {
         var it = self.items.iterator();
 
@@ -150,7 +176,7 @@ pub const SerializeContext = struct {
                         }
                     }
 
-                    if (str.eql(item.name.?, impl_name)) {
+                    if (Identifier.eql(item.name.?, interface_id)) {
                         const result = Interface{
                             .procedures = procedures,
                         };
@@ -169,7 +195,7 @@ pub const NodeItem = struct {
 
     annotations: ?std.ArrayList([]const u8),
     data: Data,
-    name: ?[]const u8,
+    name: ?Identifier,
 
     pub const Data = union(enum) {
         const_item: Constant,
@@ -187,10 +213,8 @@ pub const NodeItem = struct {
             type_kind: TypeKind,
             value_expr: ?[]const u8,
 
-            pub fn serialize(self: *const @This(), writer: anytype, name: []const u8) @TypeOf(writer).Error!void {
-                assert(self.value_expr != null);
-
-                const val = self.value_expr.?;
+            pub fn serialize(self: *const @This(), writer: anytype, name: Identifier) @TypeOf(writer).Error!void {
+                const val = self.value_expr orelse "undefined";
 
                 try fmt.format(writer, "const {s}: {} = undefined; // FIX: \n// {s};", .{
                     name,
@@ -202,9 +226,7 @@ pub const NodeItem = struct {
         };
     };
 
-    pub fn init(data: Data, name: ?[]const u8) NodeItem {
-        if (name) |s| assert(!str.isEmpty(s));
-
+    pub fn init(data: Data, name: ?Identifier) NodeItem {
         return NodeItem{
             .data = data,
             .name = name,
@@ -212,7 +234,7 @@ pub const NodeItem = struct {
         };
     }
 
-    pub fn initAlloc(allocator: std.mem.Allocator, data: Data, name: ?[]const u8) std.mem.Allocator.Error!*NodeItem {
+    pub fn initAlloc(allocator: std.mem.Allocator, data: Data, name: ?Identifier) std.mem.Allocator.Error!*NodeItem {
         const node = NodeItem.init(data, name);
 
         const ptr = try allocator.create(NodeItem);
@@ -235,7 +257,10 @@ pub const NodeItem = struct {
             .procedure_item => |proc| try proc.serialize(writer, self.name.?),
             .type_item => |typ| try typ.serialize(writer, self.name.?),
             .trait_item => |trait| try trait.serialize(writer, self.name.?, ctx),
-            else => unreachable,
+            else => |tag| {
+                std.log.err("todo: .{s}", .{@tagName(tag)});
+                @panic("todo: ");
+            },
         }
     }
 };

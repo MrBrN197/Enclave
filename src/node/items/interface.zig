@@ -1,7 +1,7 @@
-const std = @import("std");
 const fmt = std.fmt;
+const std = @import("std");
 
-const IdentifierKind = @import("./item.zig").IdentifierKind;
+const Identifier = @import("./item.zig").Identifier;
 const Module = @import("./module.zig").Module;
 const SerializeContext = @import("./item.zig").SerializeContext;
 const TypeKind = @import("../types.zig").TypeKind;
@@ -14,7 +14,7 @@ pub const Trait = struct {
     pub fn serialize(
         self: *const @This(),
         writer: anytype,
-        name: []const u8,
+        name: Identifier,
         ctx: SerializeContext,
     ) @TypeOf(writer).Error!void {
         try fmt.format(writer,

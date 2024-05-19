@@ -1,3 +1,4 @@
+const Identifier = @import("./item.zig").Identifier;
 const Impl = @import("./item.zig").Impl;
 const SerializeContext = @import("./item.zig").SerializeContext;
 const TypeKind = @import("./item.zig").TypeKind;
@@ -13,7 +14,7 @@ pub const Object = struct {
 
     const Self = @This();
 
-    pub fn serialize(self: *const Self, writer: anytype, name: []const u8, ctx: SerializeContext) !void {
+    pub fn serialize(self: *const Self, writer: anytype, name: Identifier, ctx: SerializeContext) !void {
         if (self.generics) |generics| {
             try fmt.format(writer, "// ", .{});
             for (generics.items) |generic| try fmt.format(writer, "{s}: type,", .{generic});
@@ -51,7 +52,7 @@ pub const Object = struct {
         ctx.getImpls(name, &impls);
 
         for (impls.items) |impl| {
-            const interface_name = impl.for_interface.?.text;
+            const interface_name = impl.for_interface.?;
 
             try fmt.format(
                 writer,
@@ -152,7 +153,7 @@ pub const Enum = struct {
         }
     };
 
-    pub fn serialize(self: *const @This(), writer: anytype, name: []const u8) !void {
+    pub fn serialize(self: *const @This(), writer: anytype, name: Identifier) !void {
         try fmt.format(writer, "const {s} = enum {{\n", .{name});
         const variants = self.variants;
 

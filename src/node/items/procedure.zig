@@ -1,4 +1,4 @@
-const IdentifierKind = @import("./item.zig").IdentifierKind;
+const Identifier = @import("./item.zig").Identifier;
 const TypeKind = @import("../types.zig").TypeKind;
 const TypeParam = @import("./item.zig").TypeParam;
 
@@ -11,14 +11,14 @@ pub const Procedure = struct {
     params: []const Param,
     return_type: TypeKind,
 
-    // pub fn get_bounds(self: *const @This(), type_param_identifier: IdentifierKind) ?[]const TypeKind {
+    // pub fn get_bounds(self: *const @This(), type_param_identifier: Identifier) ?[]const TypeKind {
     //     if (self.bounds) |bounds| {
     //         const result = bounds.get(type_param_identifier) orelse return null;
     //         return result.items;
     //     } else return null;
     // }
 
-    pub fn serialize(self: *const @This(), writer: anytype, name: []const u8) !void {
+    pub fn serialize(self: *const @This(), writer: anytype, name: Identifier) !void {
 
         // TODO: visibility
 
@@ -67,7 +67,7 @@ pub const Procedure = struct {
 };
 
 pub const Param = struct {
-    name: ?IdentifierKind,
+    name: ?Identifier,
     typekind: ?TypeKind,
 
     const Self = @This();

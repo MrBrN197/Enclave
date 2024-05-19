@@ -1,8 +1,6 @@
-const std = @import("std");
-
 const fmt = std.fmt;
-
 const mem = std.mem;
+const std = @import("std");
 
 pub const Buf = struct {
     const Self = @This();
@@ -46,7 +44,7 @@ pub const ImportPath = union(enum) {
         next: ?*ImportPath,
     },
 
-    const IdentifierKind = @import("./types.zig").IdentifierKind;
+    const Identifier = @import("./types.zig").Identifier;
     const PathData = struct { path: []const u8, last: []const u8 };
     const Self = @This();
 

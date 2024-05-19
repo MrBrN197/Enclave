@@ -1,25 +1,28 @@
 const c = @import("./c.zig");
+const debug = std.debug;
 const eprint = @import("./root.zig").eprint;
 const eprintln = @import("./root.zig").eprintln;
 const eql = @import("./root.zig").eql;
+const items = @import("./node/items/item.zig");
 const log = std.log;
 const mem = std.mem;
 const std = @import("std");
 const tsnode = @import("./node.zig");
-const debug = std.debug;
 
-const as_kb: usize = @shlExact(1, 20);
-const as_mb: usize = @shlExact(1, 30);
+const byte_per_kb: usize = @shlExact(1, 20);
+const byte_per_mb: usize = @shlExact(1, 30);
 
-const Parser = @import("./parser.zig").Parser;
+const File = std.fs.File;
+const Identifier = items.Identifier;
+const Impl = items.Impl;
+const Import = items.Import;
 const Node = @import("./node.zig").Node;
 const NodeItem = @import("./node.zig").NodeItem;
+const Parser = @import("./parser.zig").Parser;
 const SerializeContext = @import("./node/items/item.zig").SerializeContext;
-const Impl = @import("./node/items/item.zig").Impl;
-const File = std.fs.File;
 
 pub const std_options = std.Options{
-    .log_level = .warn,
+    .log_level = .info,
 };
 
 var gpa_allocator = std.heap.GeneralPurposeAllocator(.{
@@ -29,7 +32,7 @@ var gpa_allocator = std.heap.GeneralPurposeAllocator(.{
 const gpa = gpa_allocator.allocator();
 
 pub fn main() !void {
-    gpa_allocator.setRequestedMemoryLimit(as_mb * 256);
+    gpa_allocator.setRequestedMemoryLimit(byte_per_mb * 256);
 
     var argv = std.process.args();
     if (!argv.skip()) return error.InvalidArg;
@@ -56,15 +59,25 @@ pub fn main() !void {
 pub fn convert_files(filepaths: []const []const u8, writer: anytype) !void {
     const parse_results = try Parser.parseFiles(gpa, filepaths);
 
-    var ctx_items = std.StringHashMap(NodeItem).init(gpa); //FIX;
-    var implementations = std.ArrayList(Impl).init(gpa); //FIX;
+    var ctx_items = SerializeContext.ItemsMap.init(gpa); //FIX;
 
+    var implementations = std.ArrayList(Impl).init(gpa); //FIX;
+    var imports = std.ArrayList(Import).init(gpa);
+
+    var count: usize = 0;
     for (parse_results.items) |parse_result| {
         const module = parse_result.parserd_module.module;
         for (module.node_items.items) |node_item| {
             switch (node_item.data) {
                 .impl_item => |impl| try implementations.append(impl),
-                else => try ctx_items.putNoClobber(node_item.name.?, node_item),
+                .import_item => |import| try imports.append(import),
+                else => {
+                    count += 1;
+
+                    std.log.err("\n\nItem Name =>  {s} {}", .{ node_item.name.?, count });
+
+                    try ctx_items.putNoClobber(node_item.name.?, node_item);
+                },
             }
         }
     }
